@@ -1,8 +1,9 @@
 use std::time::{Duration, Instant};
 
-use crate::{hermite_interpolate, lerp, resample::resample};
-
-const FRAME_LOOKBACK: usize = 4;
+use crate::{
+    lerp,
+    resample::{resample, FRAME_LOOKBACK},
+};
 
 #[derive(Debug)]
 enum CompensationStrategy {
@@ -15,7 +16,7 @@ enum CompensationStrategy {
     },
 }
 
-pub(crate) struct Sink {
+pub struct Sink {
     /// sample rate initialized with
     claimed_sample_rate: f64,
 
@@ -39,11 +40,11 @@ pub(crate) struct Sink {
 }
 
 impl Sink {
-    fn channels(&self) -> usize {
+    pub fn channels(&self) -> usize {
         self.incoming.len()
     }
 
-    fn output_sample(&mut self, buffer_out: &mut [&mut [f32]]) {
+    pub fn output_sample(&mut self, buffer_out: &mut [&mut [f32]]) {
         let now = Instant::now();
         let from_start = now - self.start_time;
 
@@ -128,8 +129,6 @@ impl Sink {
                 detune,
                 fraction,
             } => {
-                let needed_input_samples = (*detune * out_len as f64) as usize;
-
                 for ((ring, channel_out), last_samples) in self
                     .incoming
                     .iter_mut()
@@ -145,63 +144,6 @@ impl Sink {
                         &mut self.scratch,
                     );
                 }
-
-                // wheeee! I super duper hope I haven't screwed anything up here
-                for (channel_i, (channel_out, last)) in buffer_out
-                    .iter_mut()
-                    .zip(self.last_frames.iter_mut())
-                    .enumerate()
-                {
-                    for i in 0..out_len {
-                        let incoming_position = i as f64 * *detune + *fraction;
-                        let head = incoming_position as usize * self.channels + channel_i;
-
-                        if head >= self.scratch.len() {
-                            // read another frame, looks like we'll need it after all
-                            for _ in 0..self.channels {
-                                self.scratch.push(self.incoming.pop().unwrap());
-                            }
-                        }
-
-                        // TODO: optimize from here...
-                        let shift_by = (incoming_position + 1.0) as usize
-                            - (incoming_position - *detune + 1.0) as usize;
-
-                        if shift_by != 1 {
-                            println!("shift by: {}", shift_by);
-                        }
-
-                        for _ in 0..shift_by {
-                            for i in 0..(FRAME_LOOKBACK - 1) {
-                                last[i] = last[i + 1];
-                            }
-
-                            last[FRAME_LOOKBACK - 1] = self.scratch[head];
-                        }
-
-                        channel_out[i] = hermite_interpolate(
-                            last[0],
-                            last[1],
-                            last[2],
-                            last[3],
-                            incoming_position.fract() as f32,
-                        );
-                        // TODO: ...to here
-                    }
-
-                    // we can't use `needed_samples` here, as occasionally we'll have to read an
-                    // additional sample due to non integer ratios between sample rates
-                    let last_i =
-                        (self.scratch.len() / self.channels - 1) * self.channels + channel_i;
-
-                    for i in 0..FRAME_LOOKBACK {
-                        last[i] = self.scratch[last_i - self.channels * (FRAME_LOOKBACK - 1 - i)];
-                    }
-                }
-
-                println!("detune: {}", *detune);
-
-                *fraction = ((needed_input_samples) as f64 * *detune + *fraction).fract();
             }
         }
 
@@ -222,7 +164,10 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::sink::{CompensationStrategy, Sink, FRAME_LOOKBACK};
+    use crate::{
+        resample::FRAME_LOOKBACK,
+        sink::{CompensationStrategy, Sink},
+    };
 
     #[test]
     fn sample_rate_estimation() {
@@ -236,12 +181,11 @@ mod tests {
             claimed_sample_rate,
             start_time: Instant::now(),
             frame_count: 0,
-            incoming: consumer,
+            incoming: vec![consumer],
             estimated_buffer_time: Duration::default(),
             estimated_buffer_ahead: None,
             strategy: CompensationStrategy::None,
             compensation_threshold: 20,
-            channels: 1,
             scratch: vec![],
             last_frames: vec![[0.0; FRAME_LOOKBACK]; 1],
         };

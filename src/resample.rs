@@ -1,4 +1,4 @@
-const FRAME_LOOKBACK: usize = 4;
+pub const FRAME_LOOKBACK: usize = 4;
 
 pub(crate) fn hermite_interpolate(x0: f32, x1: f32, x2: f32, x3: f32, t: f32) -> f32 {
     let diff = x1 - x2;
@@ -49,10 +49,6 @@ pub(crate) fn resample<F>(
         let shift_by = (incoming_position + 1.0) as usize
             - (incoming_position - resample_ratio + 1.0) as usize;
 
-        if shift_by != 1 {
-            println!("shift by: {}", shift_by);
-        }
-
         for _ in 0..shift_by {
             for i in 0..(FRAME_LOOKBACK - 1) {
                 last[i] = last[i + 1];
@@ -76,4 +72,6 @@ pub(crate) fn resample<F>(
         // additional sample due to non integer ratios between sample rates
         last[i] = scratch[scratch.len() - FRAME_LOOKBACK + i];
     }
+
+    *t_bounded = ((needed_input_samples) as f64 * resample_ratio + *t_bounded).fract();
 }
