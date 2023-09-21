@@ -15,63 +15,58 @@ pub(crate) fn hermite_interpolate(x0: f32, x1: f32, x2: f32, x3: f32, t: f32) ->
 ///
 /// * `resample_ratio` - input_frames / output_frames
 /// * `get_sample_in` - a function that returns the next sample
-pub(crate) fn resample<F>(
+pub fn resample<F>(
     resample_ratio: f64,
     mut get_sample_in: F,
     buffer_out: &mut [f32],
     last: &mut [f32; FRAME_LOOKBACK],
-    t_bounded: &mut f64,
-    scratch: &mut Vec<f32>,
+    time: &mut f64,
 ) where
     F: FnMut() -> f32,
 {
-    let out_len = buffer_out.len();
+    for out in buffer_out.iter_mut() {
+        *out = hermite_interpolate(last[0], last[1], last[2], last[3], *time as f32);
 
-    let needed_input_samples = (resample_ratio * out_len as f64) as usize;
+        *time += resample_ratio;
 
-    // make sure scratch is the right size
-    scratch.resize(needed_input_samples, 0.0);
-
-    for sample in scratch.iter_mut() {
-        *sample = get_sample_in();
-    }
-
-    for i in 0..out_len {
-        let incoming_position = i as f64 * resample_ratio + *t_bounded;
-        let head = incoming_position as usize;
-
-        if head >= scratch.len() {
-            // read another frame, looks like we'll need it after all
-            scratch.push(get_sample_in());
-        }
-
-        // TODO: optimize from here...
-        let shift_by = (incoming_position + 1.0) as usize
-            - (incoming_position - resample_ratio + 1.0) as usize;
-
-        for _ in 0..shift_by {
+        while *time >= 1.0 {
             for i in 0..(FRAME_LOOKBACK - 1) {
                 last[i] = last[i + 1];
             }
 
-            last[FRAME_LOOKBACK - 1] = scratch[head];
+            last[FRAME_LOOKBACK - 1] = get_sample_in();
+
+            *time -= 1.0;
+        }
+    }
+}
+
+#[inline]
+pub fn new_samples_needed(resample_ratio: f64, time: f64) -> usize {
+    (time + resample_ratio) as usize
+}
+
+pub fn resample_2(
+    resample_ratio: f64,
+    new_samples_in: &[f32],
+    last: &mut [f32; FRAME_LOOKBACK],
+    time: &mut f64,
+) -> f32 {
+    let out = hermite_interpolate(last[0], last[1], last[2], last[3], *time as f32);
+
+    *time += resample_ratio;
+
+    let mut consumed = 0;
+    while *time >= 1.0 {
+        for i in 0..(FRAME_LOOKBACK - 1) {
+            last[i] = last[i + 1];
         }
 
-        buffer_out[i] = hermite_interpolate(
-            last[0],
-            last[1],
-            last[2],
-            last[3],
-            incoming_position.fract() as f32,
-        );
-        // TODO: ...to here
+        last[FRAME_LOOKBACK - 1] = new_samples_in[consumed];
+
+        *time -= 1.0;
+        consumed += 1;
     }
 
-    for i in 0..FRAME_LOOKBACK {
-        // we can't use `needed_samples` here, as occasionally we'll have to read an
-        // additional sample due to non integer ratios between sample rates
-        last[i] = scratch[scratch.len() - FRAME_LOOKBACK + i];
-    }
-
-    *t_bounded = ((needed_input_samples) as f64 * resample_ratio + *t_bounded).fract();
+    out
 }

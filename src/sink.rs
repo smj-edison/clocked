@@ -1,30 +1,27 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crate::{
-    lerp,
-    resample::{resample, FRAME_LOOKBACK},
-};
+use crate::resample::{new_samples_needed, resample, resample_2, FRAME_LOOKBACK};
 
 #[derive(Debug)]
-enum CompensationStrategy {
+pub enum CompensationStrategy {
     None,
     Resample {
-        start_diff: f64,
-        detune: f64,
+        resample_ratio: f64,
         /// lowest = oldest in sub-array
-        fraction: f64,
+        time: f64,
     },
 }
 
-pub struct Sink {
+pub struct StreamSink {
     /// sample rate initialized with
     claimed_sample_rate: f64,
 
-    /// `Instant` that the `Sink` started at
-    start_time: Instant,
-    frame_count: usize,
+    /// frames produced since start
+    frame_count: u64,
 
+    /// incoming samples
     incoming: Vec<rtrb::Consumer<f32>>,
+    /// previous values (for resampling)
     last_frames: Vec<[f32; FRAME_LOOKBACK]>,
 
     /// an estimate of where the device's buffer is at time-wise
@@ -34,20 +31,20 @@ pub struct Sink {
     estimated_buffer_ahead: Option<Duration>,
 
     strategy: CompensationStrategy,
-    compensation_threshold: usize,
-
-    scratch: Vec<f32>,
+    /// in frames
+    compensation_start_threshold: f64,
 }
 
-impl Sink {
+impl StreamSink {
     pub fn channels(&self) -> usize {
         self.incoming.len()
     }
 
-    pub fn output_sample(&mut self, buffer_out: &mut [&mut [f32]]) {
-        let now = Instant::now();
-        let from_start = now - self.start_time;
+    pub fn get_strategy(&self) -> &CompensationStrategy {
+        &self.strategy
+    }
 
+    pub fn output_sample(&mut self, buffer_out: &mut [&mut [f32]], from_start: Duration) {
         let out_len = buffer_out[0].len();
 
         // make sure we have enough incoming
@@ -63,16 +60,14 @@ impl Sink {
 
             self.estimated_buffer_time +=
                 Duration::from_secs_f64(out_len as f64 / self.claimed_sample_rate);
-            self.frame_count += out_len;
+            self.frame_count += out_len as u64;
 
             // TODO: figure out estimated_buffer_time after this?
-            println!("underrun!");
-
             return;
         }
 
         // process a few samples before estimating sample rate
-        if self.frame_count > self.claimed_sample_rate as usize / 4 {
+        if self.frame_count > self.claimed_sample_rate as u64 / 4 {
             if let Some(estimated_buffer_ahead) = self.estimated_buffer_ahead {
                 let device_time =
                     (self.estimated_buffer_time - estimated_buffer_ahead).as_secs_f64();
@@ -83,9 +78,9 @@ impl Sink {
                 let frames_ahead = diff_secs * self.claimed_sample_rate;
                 let actual_sample_rate = (1.0 + diff_secs / sink_time) * self.claimed_sample_rate;
 
-                let new_detune = self.claimed_sample_rate / actual_sample_rate;
+                let new_ratio = self.claimed_sample_rate / actual_sample_rate;
 
-                if frames_ahead.abs() as usize > self.compensation_threshold {
+                if frames_ahead.abs() > self.compensation_start_threshold {
                     if let CompensationStrategy::None = self.strategy {
                         // we've drifted enough that we should start using a strategy
 
@@ -99,19 +94,25 @@ impl Sink {
                         }
 
                         self.strategy = CompensationStrategy::Resample {
-                            start_diff: diff_secs,
-                            detune: new_detune,
-                            fraction: 0.0,
+                            resample_ratio: new_ratio,
+                            time: 0.0,
                         };
-                    } else if let CompensationStrategy::Resample { detune, .. } = &mut self.strategy
+                    } else if let CompensationStrategy::Resample { resample_ratio, .. } =
+                        &mut self.strategy
                     {
                         // lerp to help detune not to slide around too much
                         // TODO: see whether this will forever lag, or whether it will eventually
                         // even out
-                        *detune = lerp(*detune, new_detune, 0.1);
+                        *resample_ratio = new_ratio;
                     }
                 }
+
+                // println!(
+                //     "frames ahead: {}, strategy: {:?}",
+                //     frames_ahead, self.strategy
+                // );
             } else {
+                // the buffer is probably established by now, let's set the estimated buffer time
                 self.estimated_buffer_ahead = Some(self.estimated_buffer_time - from_start);
             }
         }
@@ -125,9 +126,8 @@ impl Sink {
                 }
             }
             CompensationStrategy::Resample {
-                start_diff: _,
-                detune,
-                fraction,
+                resample_ratio,
+                time,
             } => {
                 for ((ring, channel_out), last_samples) in self
                     .incoming
@@ -135,38 +135,48 @@ impl Sink {
                     .zip(buffer_out.iter_mut())
                     .zip(self.last_frames.iter_mut())
                 {
-                    resample(
-                        *detune,
-                        || ring.pop().unwrap(),
-                        channel_out,
-                        last_samples,
-                        fraction,
-                        &mut self.scratch,
-                    );
+                    let mut scratch: [f32; 2] = [0.0; 2];
+
+                    for sample_out in channel_out.iter_mut() {
+                        let new_sample_count = new_samples_needed(*resample_ratio, *time);
+
+                        for i in 0..new_sample_count {
+                            scratch[i] = ring.pop().unwrap();
+                        }
+
+                        let out = resample_2(
+                            *resample_ratio,
+                            &scratch[0..new_sample_count],
+                            last_samples,
+                            time,
+                        );
+
+                        *sample_out = out;
+                    }
                 }
             }
         }
 
         self.estimated_buffer_time +=
             Duration::from_secs_f64(out_len as f64 / self.claimed_sample_rate);
-        self.frame_count += out_len;
+        self.frame_count += out_len as u64;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    const TEST_BUFFER_SIZE: usize = 64;
+    const TEST_BUFFER_SIZE: usize = 256;
+    const WRITE_TEST_AUDIO_TO_FILE: bool = true;
 
     use hound::{SampleFormat, WavSpec, WavWriter};
     use std::{
         f64::consts::TAU,
-        thread,
         time::{Duration, Instant},
     };
 
     use crate::{
         resample::FRAME_LOOKBACK,
-        sink::{CompensationStrategy, Sink},
+        sink::{CompensationStrategy, StreamSink},
     };
 
     #[test]
@@ -174,19 +184,17 @@ mod tests {
         let (mut producer, consumer) = rtrb::RingBuffer::new(TEST_BUFFER_SIZE * 8);
 
         let claimed_sample_rate = 48_000.0;
-        let sample_rate = 48_100; // run slightly fast
+        let sample_rate = 49_000; // run slightly fast
         let buffer_size = TEST_BUFFER_SIZE;
 
-        let mut sink = Sink {
+        let mut sink = StreamSink {
             claimed_sample_rate,
-            start_time: Instant::now(),
             frame_count: 0,
             incoming: vec![consumer],
             estimated_buffer_time: Duration::default(),
             estimated_buffer_ahead: None,
             strategy: CompensationStrategy::None,
-            compensation_threshold: 20,
-            scratch: vec![],
+            compensation_start_threshold: 20.0,
             last_frames: vec![[0.0; FRAME_LOOKBACK]; 1],
         };
 
@@ -197,52 +205,64 @@ mod tests {
         let mut filling_buffer_ref = [filling_buffer.as_mut()];
 
         // output test audio
-        let mut writer = WavWriter::create(
-            "out-test.wav",
-            WavSpec {
-                channels: 1,
-                sample_rate: sample_rate,
-                bits_per_sample: 32,
-                sample_format: SampleFormat::Float,
-            },
-        )
-        .unwrap();
+        let mut writer = if WRITE_TEST_AUDIO_TO_FILE {
+            Some(
+                WavWriter::create(
+                    "out-test.wav",
+                    WavSpec {
+                        channels: 1,
+                        sample_rate: sample_rate as u32,
+                        bits_per_sample: 32,
+                        sample_format: SampleFormat::Float,
+                    },
+                )
+                .unwrap(),
+            )
+        } else {
+            None
+        };
 
         let mut t_sin: f64 = 0.0;
+
+        let mut consumed = 0;
+        let mut produced = 0;
 
         while !producer.is_full() {
             producer.push(t_sin.sin() as f32).unwrap();
             t_sin += (440.0 / claimed_sample_rate) * TAU;
         }
 
-        sink.output_sample(&mut filling_buffer_ref);
-        sink.output_sample(&mut filling_buffer_ref);
+        sink.output_sample(&mut filling_buffer_ref, time_started - time_started);
+        sink.output_sample(&mut filling_buffer_ref, time_started - time_started);
 
-        for buffer_count in 0..700 {
-            let buffer_time =
-                Duration::from_secs_f64((buffer_count * buffer_size) as f64 / sample_rate as f64);
-
-            let current_time = Instant::now() - time_started;
-
+        for i in 0..15000 {
             while !producer.is_full() {
                 producer.push(t_sin.sin() as f32).unwrap();
                 t_sin += (440.0 / claimed_sample_rate) * TAU;
+                consumed += 1;
             }
 
             let mut buffer: [f32; TEST_BUFFER_SIZE] = [0.0; TEST_BUFFER_SIZE];
             let mut buffer_ref = [buffer.as_mut()];
 
-            sink.output_sample(&mut buffer_ref);
+            sink.output_sample(
+                &mut buffer_ref,
+                Duration::from_secs_f64((1.0 / sample_rate as f64) * buffer_size as f64) * i,
+            );
 
-            for sample in &buffer {
-                writer.write_sample(*sample).unwrap();
-            }
+            produced += buffer.len();
 
-            if buffer_time > current_time {
-                thread::sleep(buffer_time - current_time);
+            if WRITE_TEST_AUDIO_TO_FILE {
+                for sample in &buffer {
+                    writer.as_mut().unwrap().write_sample(*sample).unwrap();
+                }
             }
         }
 
-        println!("time elapsed: {:?}", Instant::now() - time_started);
+        let ratio = consumed as f32 / produced as f32;
+        let expected_ratio = claimed_sample_rate as f32 / sample_rate as f32;
+
+        assert!((ratio - expected_ratio).abs() < 0.001);
+        // println!("ratio: {}, expected ratio: {}", ratio, expected_ratio);
     }
 }
