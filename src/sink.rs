@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::resample::{new_samples_needed, resample, resample_2, FRAME_LOOKBACK};
+use crate::resample::{new_samples_needed, resample, FRAME_LOOKBACK};
 
 #[derive(Debug)]
 pub enum CompensationStrategy {
@@ -144,7 +144,7 @@ impl StreamSink {
                             scratch[i] = ring.pop().unwrap();
                         }
 
-                        let out = resample_2(
+                        let out = resample(
                             *resample_ratio,
                             &scratch[0..new_sample_count],
                             last_samples,
