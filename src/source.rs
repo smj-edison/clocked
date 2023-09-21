@@ -9,9 +9,6 @@ pub struct StreamSource {
     /// sample rate initialized with
     claimed_sample_rate: f64,
 
-    /// `Instant` that the `Sink` started at
-    frame_count: u64,
-
     out: Vec<rtrb::Producer<f32>>,
     local_buffers: Vec<VecDeque<f32>>,
     last_frames: Vec<[f32; FRAME_LOOKBACK]>,
@@ -49,7 +46,6 @@ impl StreamSource {
             // stupid consumer isn't keeping up; buffer overrun. The show must go on though!
             self.estimated_buffer_time +=
                 Duration::from_secs_f64(in_len as f64 / self.claimed_sample_rate);
-            self.frame_count += in_len as u64;
 
             // TODO: figure out estimated_buffer_time after this?
             return;
@@ -61,7 +57,7 @@ impl StreamSource {
         }
 
         // process a few samples before estimating sample rate
-        if self.frame_count > self.claimed_sample_rate as u64 / 4 {
+        if from_start > Duration::from_secs_f64(0.25) {
             let device_time = self.estimated_buffer_time.as_secs_f64();
             let sink_time = from_start.as_secs_f64();
 
@@ -149,7 +145,6 @@ impl StreamSource {
 
         self.estimated_buffer_time +=
             Duration::from_secs_f64(in_len as f64 / self.claimed_sample_rate);
-        self.frame_count += in_len as u64;
     }
 }
 
@@ -171,9 +166,8 @@ mod tests {
         let sample_rate = 48_000;
         let buffer_size = TEST_BUFFER_SIZE;
 
-        let mut sink = StreamSource {
+        let mut source = StreamSource {
             claimed_sample_rate,
-            frame_count: 0,
             out: vec![producer],
             local_buffers: vec![VecDeque::with_capacity(buffer_size * 2)],
             last_frames: vec![[0.0; FRAME_LOOKBACK]],
@@ -215,7 +209,7 @@ mod tests {
 
             let buffer_ref = [buffer.as_ref()];
 
-            sink.input_sample(
+            source.input_sample(
                 &buffer_ref,
                 Duration::from_secs_f64((1.0 / sample_rate as f64) * buffer_size as f64) * i,
             );
@@ -242,7 +236,7 @@ mod tests {
 
         assert!((ratio - expected_ratio).abs() < 0.001);
 
-        if let CompensationStrategy::Resample { resample_ratio, .. } = &sink.strategy {
+        if let CompensationStrategy::Resample { resample_ratio, .. } = &source.strategy {
             assert!((resample_ratio - expected_ratio).abs() < 0.001);
         } else {
             unreachable!("Compensation strategy should have been used by now");

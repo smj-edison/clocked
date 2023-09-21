@@ -9,9 +9,6 @@ pub struct StreamSink {
     /// sample rate initialized with
     claimed_sample_rate: f64,
 
-    /// frames produced since start
-    frame_count: u64,
-
     /// incoming samples
     incoming: Vec<rtrb::Consumer<f32>>,
     /// previous values (for resampling)
@@ -59,13 +56,12 @@ impl StreamSink {
 
             self.estimated_buffer_time +=
                 Duration::from_secs_f64(out_len as f64 / self.claimed_sample_rate);
-            self.frame_count += out_len as u64;
 
             return;
         }
 
         // process a few samples before estimating sample rate
-        if self.frame_count > self.claimed_sample_rate as u64 / 4 {
+        if from_start > Duration::from_secs_f64(0.25) {
             if let Some(estimated_buffer_ahead) = self.estimated_buffer_ahead {
                 let device_time =
                     (self.estimated_buffer_time - estimated_buffer_ahead).as_secs_f64();
@@ -154,7 +150,6 @@ impl StreamSink {
 
         self.estimated_buffer_time +=
             Duration::from_secs_f64(out_len as f64 / self.claimed_sample_rate);
-        self.frame_count += out_len as u64;
     }
 }
 
@@ -184,7 +179,6 @@ mod tests {
 
         let mut sink = StreamSink {
             claimed_sample_rate,
-            frame_count: 0,
             incoming: vec![consumer],
             estimated_buffer_time: Duration::default(),
             estimated_buffer_ahead: None,
