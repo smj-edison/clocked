@@ -1,16 +1,9 @@
 use std::time::Duration;
 
-use crate::resample::{new_samples_needed, resample, FRAME_LOOKBACK};
-
-#[derive(Debug)]
-pub enum CompensationStrategy {
-    None,
-    Resample {
-        resample_ratio: f64,
-        /// lowest = oldest in sub-array
-        time: f64,
-    },
-}
+use crate::{
+    resample::{new_samples_needed, resample, FRAME_LOOKBACK},
+    CompensationStrategy,
+};
 
 pub struct StreamSink {
     /// sample rate initialized with
@@ -48,7 +41,13 @@ impl StreamSink {
         let out_len = buffer_out[0].len();
 
         // make sure we have enough incoming
-        let enough = self.incoming.iter().all(|x| x.slots() >= out_len + 4);
+        let enough = match self.strategy {
+            CompensationStrategy::None => self.incoming.iter().all(|x| x.slots() >= out_len + 4),
+            CompensationStrategy::Resample { resample_ratio, .. } => self
+                .incoming
+                .iter()
+                .all(|x| x.slots() >= (out_len as f64 * resample_ratio) as usize + 4),
+        };
 
         if !enough {
             // stupid producer isn't keeping up; buffer underrun. The show must go on though!
@@ -62,7 +61,6 @@ impl StreamSink {
                 Duration::from_secs_f64(out_len as f64 / self.claimed_sample_rate);
             self.frame_count += out_len as u64;
 
-            // TODO: figure out estimated_buffer_time after this?
             return;
         }
 
@@ -106,11 +104,6 @@ impl StreamSink {
                         *resample_ratio = new_ratio;
                     }
                 }
-
-                // println!(
-                //     "frames ahead: {}, strategy: {:?}",
-                //     frames_ahead, self.strategy
-                // );
             } else {
                 // the buffer is probably established by now, let's set the estimated buffer time
                 self.estimated_buffer_ahead = Some(self.estimated_buffer_time - from_start);
@@ -144,6 +137,8 @@ impl StreamSink {
                             scratch[i] = ring.pop().unwrap();
                         }
 
+                        // I'm sure there's a faster way to do this, but my head really hurts and this
+                        // isn't causing distortion
                         let out = resample(
                             *resample_ratio,
                             &scratch[0..new_sample_count],
@@ -259,10 +254,16 @@ mod tests {
             }
         }
 
-        let ratio = consumed as f32 / produced as f32;
-        let expected_ratio = claimed_sample_rate as f32 / sample_rate as f32;
+        let ratio = consumed as f64 / produced as f64;
+        let expected_ratio = claimed_sample_rate as f64 / sample_rate as f64;
 
         assert!((ratio - expected_ratio).abs() < 0.001);
+
+        if let CompensationStrategy::Resample { resample_ratio, .. } = &sink.strategy {
+            assert!((resample_ratio - expected_ratio).abs() < 0.001);
+        } else {
+            unreachable!("Compensation strategy should have been used by now");
+        }
         // println!("ratio: {}, expected ratio: {}", ratio, expected_ratio);
     }
 }
