@@ -22,28 +22,26 @@ pub fn new_samples_needed(resample_ratio: f64, time: f64) -> usize {
 /// * `new_samples_in` - an array with _new_ incoming samples (use [`new_samples_needed`]
 ///    to figure out how many new samples are needed)
 /// * `last` - an array with the previous values
-/// * `time` - ref to current time fraction (between 0.0 and 1.0 exclusive)
+/// * `time` - ref to current time fraction [0.0, 1.0)
 pub fn resample(
     resample_ratio: f64,
-    new_samples_in: &[f32],
+    mut new_samples_in: impl Iterator<Item = f32>,
     last: &mut [f32; FRAME_LOOKBACK],
-    time: &mut f64,
-) -> f32 {
-    let out = hermite_interpolate(last[0], last[1], last[2], last[3], *time as f32);
+    mut time: f64,
+) -> (f32, f64) {
+    let out = hermite_interpolate(last[0], last[1], last[2], last[3], time as f32);
 
-    *time += resample_ratio;
+    time += resample_ratio;
 
-    let mut consumed = 0;
-    while *time >= 1.0 {
+    while time >= 1.0 {
         for i in 0..(FRAME_LOOKBACK - 1) {
             last[i] = last[i + 1];
         }
 
-        last[FRAME_LOOKBACK - 1] = new_samples_in[consumed];
+        last[FRAME_LOOKBACK - 1] = new_samples_in.next().unwrap();
 
-        *time -= 1.0;
-        consumed += 1;
+        time -= 1.0;
     }
 
-    out
+    (out, time)
 }

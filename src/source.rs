@@ -13,15 +13,23 @@ pub struct StreamSource {
     local_buffers: Vec<VecDeque<f32>>,
     last_frames: Vec<[f32; FRAME_LOOKBACK]>,
 
-    /// an estimate of where the device's buffer is at time-wise
-    estimated_buffer_time: Duration,
-
     strategy: CompensationStrategy,
     /// in frames
     compensation_start_threshold: f64,
 }
 
 impl StreamSource {
+    pub fn new(sample_rate: f64, out: Vec<rtrb::Producer<f32>>, capacity: usize) -> StreamSource {
+        StreamSource {
+            claimed_sample_rate: sample_rate,
+            out,
+            local_buffers: vec![VecDeque::with_capacity(capacity)],
+            last_frames: vec![[0.0; FRAME_LOOKBACK]],
+            strategy: CompensationStrategy::None,
+            compensation_start_threshold: 20.0,
+        }
+    }
+
     pub fn channels(&self) -> usize {
         self.out.len()
     }
@@ -30,36 +38,11 @@ impl StreamSource {
         &self.strategy
     }
 
-    pub fn input_sample(&mut self, buffer_in: &[&[f32]], from_start: Duration) {
-        let in_len = buffer_in[0].len();
-
-        // make sure we have enough space to push
-        let enough = match self.strategy {
-            CompensationStrategy::None => self.out.iter().all(|x| x.slots() >= in_len + 4),
-            CompensationStrategy::Resample { resample_ratio, .. } => self
-                .out
-                .iter()
-                .all(|x| x.slots() >= (in_len as f64 * resample_ratio) as usize + 4),
-        };
-
-        if !enough {
-            // stupid consumer isn't keeping up; buffer overrun. The show must go on though!
-            self.estimated_buffer_time +=
-                Duration::from_secs_f64(in_len as f64 / self.claimed_sample_rate);
-
-            // TODO: figure out estimated_buffer_time after this?
-            return;
-        }
-
-        // copy incoming to a local buffer
-        for (channel_in, local_buffer) in buffer_in.iter().zip(self.local_buffers.iter_mut()) {
-            local_buffer.extend(channel_in.iter());
-        }
-
+    fn handle_new_inputs(&mut self, in_len: usize, callback: Duration, capture: Duration) {
         // process a few samples before estimating sample rate
-        if from_start > Duration::from_secs_f64(0.25) {
-            let device_time = self.estimated_buffer_time.as_secs_f64();
-            let sink_time = from_start.as_secs_f64();
+        if callback > Duration::from_secs_f64(5.0) {
+            let device_time = capture.as_secs_f64();
+            let sink_time = callback.as_secs_f64();
 
             let diff_secs = device_time - sink_time;
 
@@ -73,11 +56,7 @@ impl StreamSource {
 
                 if let CompensationStrategy::None = self.strategy {
                     // fill up `last` with previous values for hermite interpolation
-                    for (channel_in, last) in self
-                        .local_buffers
-                        .iter_mut()
-                        .zip(self.last_frames.iter_mut())
-                    {
+                    for (channel_in, last) in self.local_buffers.iter_mut().zip(self.last_frames.iter_mut()) {
                         for last_sample in last.iter_mut().skip(1) {
                             *last_sample = channel_in.pop_front().unwrap();
                         }
@@ -87,9 +66,7 @@ impl StreamSource {
                         resample_ratio: new_ratio,
                         time: 0.0,
                     };
-                } else if let CompensationStrategy::Resample { resample_ratio, .. } =
-                    &mut self.strategy
-                {
+                } else if let CompensationStrategy::Resample { resample_ratio, .. } = &mut self.strategy {
                     // lerp to help detune not to slide around too much
                     // TODO: see whether this will forever lag, or whether it will eventually
                     // even out
@@ -106,10 +83,7 @@ impl StreamSource {
                     }
                 }
             }
-            CompensationStrategy::Resample {
-                resample_ratio,
-                time,
-            } => {
+            CompensationStrategy::Resample { resample_ratio, time } => {
                 for ((channel_in, ring), last_samples) in self
                     .local_buffers
                     .iter_mut()
@@ -127,14 +101,16 @@ impl StreamSource {
                                 scratch[i] = channel_in.pop_front().unwrap();
                             }
 
-                            let out = resample(
+                            let (out, new_time) = resample(
                                 *resample_ratio,
-                                &scratch[0..new_sample_count],
+                                scratch[0..new_sample_count].iter().copied(),
                                 last_samples,
-                                time,
+                                *time,
                             );
 
-                            ring.push(out).unwrap();
+                            *time = new_time;
+
+                            let _ = ring.push(out);
                         } else {
                             break 'inner;
                         }
@@ -142,39 +118,60 @@ impl StreamSource {
                 }
             }
         }
+    }
 
-        self.estimated_buffer_time +=
-            Duration::from_secs_f64(in_len as f64 / self.claimed_sample_rate);
+    pub fn input_sample(&mut self, buffer_in: &[&[f32]], callback: Duration, capture: Duration) {
+        let in_len = buffer_in[0].len();
+
+        // copy incoming to a local buffer
+        for (channel_in, local_buffer) in buffer_in.iter().zip(self.local_buffers.iter_mut()) {
+            local_buffer.extend(channel_in.iter());
+        }
+
+        self.handle_new_inputs(in_len, callback, capture);
+    }
+
+    pub fn input_sample_interleaved(
+        &mut self,
+        iter: impl Iterator<Item = f32>,
+        total_samples: usize,
+        callback: Duration,
+        capture: Duration,
+    ) {
+        let in_len = total_samples / self.channels();
+
+        // copy incoming to a local buffer
+        let mut channel_i = 0;
+
+        for sample_in in iter {
+            self.local_buffers[channel_i].push_back(sample_in);
+
+            channel_i = (channel_i + 1) % self.channels();
+        }
+
+        self.handle_new_inputs(in_len, callback, capture);
     }
 }
 
 #[cfg(test)]
 mod tests {
     const TEST_BUFFER_SIZE: usize = 256;
-    const WRITE_TEST_AUDIO_TO_FILE: bool = true;
+    const WRITE_TEST_AUDIO_TO_FILE: bool = false;
 
     use hound::{SampleFormat, WavSpec, WavWriter};
-    use std::{collections::VecDeque, f64::consts::TAU, time::Duration};
+    use std::{f64::consts::TAU, time::Duration};
 
-    use crate::{resample::FRAME_LOOKBACK, source::StreamSource, CompensationStrategy};
+    use crate::{source::StreamSource, CompensationStrategy};
 
     #[test]
     fn sample_rate_estimation() {
         let (producer, mut consumer) = rtrb::RingBuffer::new(TEST_BUFFER_SIZE * 8);
 
-        let claimed_sample_rate = 47_000.0; // run slightly slow
-        let sample_rate = 48_000;
+        let claimed_sample_rate = 48_000.0; // run slightly slow
+        let sample_rate = 49_000;
         let buffer_size = TEST_BUFFER_SIZE;
 
-        let mut source = StreamSource {
-            claimed_sample_rate,
-            out: vec![producer],
-            local_buffers: vec![VecDeque::with_capacity(buffer_size * 2)],
-            last_frames: vec![[0.0; FRAME_LOOKBACK]],
-            estimated_buffer_time: Duration::default(),
-            strategy: CompensationStrategy::None,
-            compensation_start_threshold: 20.0,
-        };
+        let mut source = StreamSource::new(claimed_sample_rate, vec![producer], buffer_size * 8);
 
         // output test audio
         let mut writer = if WRITE_TEST_AUDIO_TO_FILE {
@@ -211,6 +208,7 @@ mod tests {
 
             source.input_sample(
                 &buffer_ref,
+                Duration::from_secs_f64((1.0 / claimed_sample_rate as f64) * buffer_size as f64) * i,
                 Duration::from_secs_f64((1.0 / sample_rate as f64) * buffer_size as f64) * i,
             );
 
@@ -218,11 +216,7 @@ mod tests {
 
             while !consumer.is_empty() {
                 if WRITE_TEST_AUDIO_TO_FILE {
-                    writer
-                        .as_mut()
-                        .unwrap()
-                        .write_sample(consumer.pop().unwrap())
-                        .unwrap();
+                    writer.as_mut().unwrap().write_sample(consumer.pop().unwrap()).unwrap();
                 } else {
                     consumer.pop().unwrap();
                 }
@@ -241,6 +235,5 @@ mod tests {
         } else {
             unreachable!("Compensation strategy should have been used by now");
         }
-        // println!("ratio: {}, expected ratio: {}", ratio, expected_ratio);
     }
 }
