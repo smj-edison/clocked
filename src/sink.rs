@@ -3,22 +3,50 @@ use std::{thread, time::Duration};
 use nalgebra::DMatrix;
 
 use crate::{
-    resample::{new_samples_needed, resample, FRAME_LOOKBACK},
+    lerp,
+    resample::{new_samples_needed, resample, FRAME_LOOKBACK, ROLLING_AVG_LENGTH},
     CompensationStrategy,
 };
 
-pub struct StreamSink {
-    /// sample rate initialized with
-    claimed_sample_rate: f64,
+#[derive(Debug, Clone)]
+pub struct PidSettings {
+    pub prop_factor: f64,
+    pub integ_factor: f64,
+    pub deriv_factor: f64,
 
+    /// to help prevent massive jerks in speed
+    pub min_factor: f64,
+    /// to help prevent massive jerks in speed
+    pub max_factor: f64,
+    pub factor_last_interp: f64,
+}
+
+impl Default for PidSettings {
+    fn default() -> Self {
+        PidSettings {
+            prop_factor: 0.000001,
+            integ_factor: 0.00000008,
+            deriv_factor: 0.00001,
+            min_factor: -0.2,
+            max_factor: 0.2,
+            factor_last_interp: 0.05,
+        }
+    }
+}
+
+pub struct StreamSink {
     /// incoming samples
     incoming: rtrb::Consumer<f32>,
     channels: usize,
+    ring_size: usize,
 
     /// previous values (for resampling)
     last_frames: Vec<[f32; FRAME_LOOKBACK]>,
 
-    compensated_output_time: Duration,
+    pid_settings: PidSettings,
+    rolling_ring_avg: [usize; ROLLING_AVG_LENGTH],
+    ring_integral: f64,
+    last_avg: f64,
 
     /// in frames
     compensation_start_threshold: f64,
@@ -30,23 +58,38 @@ pub struct StreamSink {
 
 impl StreamSink {
     pub fn new(
-        sample_rate: f64,
         incoming: rtrb::Consumer<f32>,
         channels: usize,
         compensation_start_threshold: f64,
         startup_time: Duration,
+        pid_settings: PidSettings,
     ) -> StreamSink {
+        let ring_size = incoming.buffer().capacity();
+
         StreamSink {
-            claimed_sample_rate: sample_rate,
             incoming: incoming,
+            ring_size: ring_size,
             channels: channels,
             last_frames: vec![[0.0; FRAME_LOOKBACK]; channels],
-            compensated_output_time: Duration::ZERO,
+            pid_settings,
+            rolling_ring_avg: [0; ROLLING_AVG_LENGTH],
+            ring_integral: 0.0,
+            last_avg: 0.0,
             strategy: CompensationStrategy::None,
             compensation_start_threshold,
             startup_time,
             resample_scratch: DMatrix::zeros(4, channels),
         }
+    }
+
+    pub fn with_defaults(incoming: rtrb::Consumer<f32>, channels: usize) -> StreamSink {
+        Self::new(
+            incoming,
+            channels,
+            0.1,
+            Duration::from_millis(250),
+            PidSettings::default(),
+        )
     }
 
     pub fn channels(&self) -> usize {
@@ -57,69 +100,81 @@ impl StreamSink {
         &self.strategy
     }
 
-    pub fn output_sample<'a>(&mut self, buffer_out: &mut [f32], callback: Duration, playback: Duration) {
+    pub fn output_sample<'a>(&mut self, buffer_out: &mut [f32], callback: Duration) {
         let out_len = buffer_out.len() / self.channels;
 
         // process a few samples before estimating sample rate
         if callback > self.startup_time {
-            let diff_secs = playback.as_secs_f64() - self.compensated_output_time.as_secs_f64();
-            let frames_ahead = diff_secs * self.claimed_sample_rate;
+            // target is half of ring capacity
+            let target = self.ring_size as f64 / 2.0;
+            let avg = self.rolling_ring_avg.iter().map(|x| *x as f64).sum::<f64>() / self.rolling_ring_avg.len() as f64;
+            let error = avg - target;
 
-            let error = -diff_secs;
-            // let new_ratio = 2_f64.powf(error * 2.0);
-            let new_ratio = 1.0;
+            self.ring_integral += error;
 
-            if frames_ahead.abs() > self.compensation_start_threshold {
-                if let CompensationStrategy::None = self.strategy {
+            // PID controls
+            let proportional = error * self.pid_settings.prop_factor;
+            let integrative = self.ring_integral * self.pid_settings.integ_factor;
+            let derivative = (avg - self.last_avg) * self.pid_settings.deriv_factor;
+
+            let new_factor = (proportional + integrative + derivative)
+                .max(self.pid_settings.min_factor)
+                .min(self.pid_settings.max_factor);
+            let new_ratio = 2_f64.powf(new_factor);
+
+            if let CompensationStrategy::None = self.strategy {
+                if new_factor.abs() > self.compensation_start_threshold {
                     // we've drifted enough that we should start using a strategy
+                    println!("activated");
+
+                    // reset integral so it doesn't overshoot
+                    self.ring_integral = 0.0;
+
+                    self.strategy = CompensationStrategy::Resample {
+                        resample_ratio: 1.0,
+                        time: 0.0,
+                    };
 
                     // fill up `last` with previous values for hermite interpolation
-                    for frame_i in 1..FRAME_LOOKBACK {
+                    'outer: for frame_i in 1..FRAME_LOOKBACK {
                         for (channel_i, last_samples) in self.last_frames.iter_mut().enumerate() {
                             if let Ok(frame_in) = self.incoming.pop() {
                                 last_samples[frame_i] = frame_in;
                             } else {
                                 // make sure we don't get channels unaligned
                                 preserve_alignment(self.channels, channel_i, &mut self.incoming);
+                                break 'outer;
                             }
                         }
                     }
-
-                    self.strategy = CompensationStrategy::Resample {
-                        resample_ratio: new_ratio,
-                        time: 0.0,
-                    };
-                } else if let CompensationStrategy::Resample { resample_ratio, .. } = &mut self.strategy {
-                    // lerp to help detune not to slide around too much
-                    // TODO: see whether this will forever lag, or whether it will eventually
-                    // even out
-                    *resample_ratio = new_ratio;
                 }
+
+                self.last_avg = avg;
+            } else if let CompensationStrategy::Resample { resample_ratio, .. } = &mut self.strategy {
+                // lerp to help detune not to slide around too much
+                // TODO: see whether this will forever lag, or whether it will eventually
+                // even out
+                *resample_ratio = lerp(*resample_ratio, new_ratio, self.pid_settings.factor_last_interp);
             }
         }
 
+        self.rolling_ring_avg.rotate_left(1);
+        self.rolling_ring_avg[self.rolling_ring_avg.len() - 1] = self.incoming.slots();
+
         match &mut self.strategy {
             CompensationStrategy::None => {
-                self.compensated_output_time +=
-                    Duration::from_secs_f64((out_len as f64) / self.claimed_sample_rate as f64);
-
                 for (i, sample_out) in buffer_out.iter_mut().enumerate() {
                     if let Ok(sample) = self.incoming.pop() {
                         *sample_out = sample;
                     } else {
                         // make sure we don't get channels unaligned
                         preserve_alignment(self.channels, i % self.channels, &mut self.incoming);
-                        println!("underrun");
 
                         break;
                     }
                 }
             }
             CompensationStrategy::Resample { resample_ratio, time } => {
-                self.compensated_output_time += Duration::from_secs_f64(
-                    (1.0 / *resample_ratio) * (out_len as f64) / self.claimed_sample_rate as f64,
-                );
-
                 'outer: for frame_i in 0..out_len {
                     let needed_new_samples = new_samples_needed(*resample_ratio, *time);
                     let mut next_time: f64 = 0.0;
@@ -189,13 +244,7 @@ mod tests {
         let sample_rate = 49_000; // run slightly fast
         let buffer_size = TEST_BUFFER_SIZE;
 
-        let mut sink = StreamSink::new(
-            claimed_sample_rate as f64,
-            consumer,
-            1,
-            10.0,
-            Duration::from_millis(250),
-        );
+        let mut sink = StreamSink::with_defaults(consumer, 1);
 
         let time_started = Instant::now();
 
@@ -230,8 +279,8 @@ mod tests {
             t_sin += (440.0 / claimed_sample_rate) * TAU;
         }
 
-        sink.output_sample(&mut filling_buffer, time_started - time_started, Duration::ZERO);
-        sink.output_sample(&mut filling_buffer, time_started - time_started, Duration::ZERO);
+        sink.output_sample(&mut filling_buffer, time_started - time_started);
+        sink.output_sample(&mut filling_buffer, time_started - time_started);
 
         for i in 0..15000 {
             while !producer.is_full() {
@@ -245,7 +294,6 @@ mod tests {
             sink.output_sample(
                 &mut buffer,
                 Duration::from_secs_f64((1.0 / sample_rate as f64) * buffer_size as f64) * i,
-                Duration::from_secs_f64((1.0 / claimed_sample_rate as f64) * buffer_size as f64) * i,
             );
 
             produced += buffer.len();

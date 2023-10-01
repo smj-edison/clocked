@@ -4,12 +4,11 @@ use std::{
 };
 
 use cpal::{
-    traits::DeviceTrait, Device, InputStreamTimestamp, OutputStreamTimestamp, SampleFormat, Stream, StreamConfig,
-    StreamInstant, SupportedStreamConfig,
+    traits::DeviceTrait, Device, InputStreamTimestamp, SampleFormat, Stream, StreamConfig, StreamInstant,
+    SupportedStreamConfig,
 };
 use dasp_sample::Sample;
 use rtrb::{Consumer, RingBuffer};
-use smallvec::SmallVec;
 use snafu::{ResultExt, Snafu};
 
 use crate::{sink::StreamSink, source::StreamSource};
@@ -21,7 +20,7 @@ pub enum CpalError {
 }
 
 pub struct CpalSource {
-    stream: Stream,
+    _stream: Stream,
     pub data_in: Vec<Consumer<f32>>,
 }
 
@@ -128,7 +127,7 @@ pub fn start_cpal_source(
 
     // finally
     Ok(CpalSource {
-        stream: stream,
+        _stream: stream,
         data_in: consumers,
     })
 }
@@ -167,7 +166,7 @@ fn input_callback<T>(
 }
 
 pub struct CpalSink {
-    stream: Stream,
+    _stream: Stream,
     pub data_out: rtrb::Producer<f32>,
     channels: usize,
 }
@@ -189,7 +188,7 @@ pub fn start_cpal_sink(
 
     let (producer, consumer) = RingBuffer::new(ring_buffer_size);
 
-    let mut manager = StreamSink::new(47_500 as f64, consumer, channels as usize, 20.0, Duration::from_secs(1));
+    let mut manager = StreamSink::with_defaults(consumer, channels as usize);
     let mut scratch = vec![];
 
     let callback_start = Instant::now();
@@ -387,7 +386,7 @@ pub fn start_cpal_sink(
 
     // finally
     Ok(CpalSink {
-        stream: stream,
+        _stream: stream,
         data_out: producer,
         channels: channels as usize,
     })
@@ -413,14 +412,13 @@ fn output_callback<T>(
     }
 
     let playback_start = playback_start.unwrap();
-    let buffer_len = output.len() / manager.channels();
 
     let callback = Instant::now() - callback_start;
     let playback = playback_now.duration_since(&playback_start).unwrap_or(Duration::ZERO);
 
     scratch.resize(output.len(), 0.0);
 
-    manager.output_sample(scratch, callback, playback);
+    manager.output_sample(scratch, callback);
 
     for (sample, sample_out) in scratch.iter().zip(output.iter_mut()) {
         *sample_out = sample.to_sample::<T>();

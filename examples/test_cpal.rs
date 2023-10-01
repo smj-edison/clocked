@@ -20,7 +20,7 @@ fn main() {
     let config = StreamConfig {
         channels: 2,
         sample_rate: cpal::SampleRate(48_000),
-        buffer_size: BufferSize::Fixed(2048),
+        buffer_size: BufferSize::Fixed(1024),
     };
 
     let buffer_size = match config.buffer_size {
@@ -44,13 +44,13 @@ fn main() {
     let start = Instant::now();
     let mut frames_processed = 0;
 
-    let actual_sample_rate = 47_500;
+    let actual_sample_rate = 47_800;
 
     loop {
-        'block: for _ in 0..64 {
+        'block: for _ in 0..1024 {
             for _ in 0..sink.channels() {
                 if let Err(_) = sink.data_out.push(t_sin.sin() as f32 * 0.02) {
-                    println!("overrun");
+                    // println!("overrun");
 
                     break 'block;
                 }

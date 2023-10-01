@@ -4,8 +4,8 @@ pub mod resample;
 pub mod sink;
 pub mod source;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+pub fn lerp(start: f64, end: f64, amount: f64) -> f64 {
+    (end - start) * amount + start
 }
 
 #[derive(Debug)]

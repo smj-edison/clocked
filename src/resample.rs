@@ -1,4 +1,5 @@
 pub const FRAME_LOOKBACK: usize = 4;
+pub const ROLLING_AVG_LENGTH: usize = 4;
 
 pub(crate) fn hermite_interpolate(x0: f32, x1: f32, x2: f32, x3: f32, t: f32) -> f32 {
     let diff = x1 - x2;
