@@ -9,7 +9,6 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
     BufferSize, StreamConfig,
 };
-use hound::{SampleFormat, WavSpec, WavWriter};
 
 fn main() {
     let host = cpal::default_host();
@@ -20,7 +19,7 @@ fn main() {
     let config = StreamConfig {
         channels: 2,
         sample_rate: cpal::SampleRate(48_000),
-        buffer_size: BufferSize::Fixed(1024),
+        buffer_size: BufferSize::Fixed(512),
     };
 
     let buffer_size = match config.buffer_size {
@@ -33,21 +32,16 @@ fn main() {
     println!("sample rate: {}", config.sample_rate.0);
 
     let mut t_sin: f64 = 0.0;
-    let mut sink = start_cpal_sink(
-        output_device,
-        &config,
-        supported_config.sample_format(),
-        buffer_size * 2,
-    )
-    .unwrap();
+    let mut sink = start_cpal_sink(output_device, &config, supported_config.sample_format(), buffer_size, 2).unwrap();
 
     let start = Instant::now();
     let mut frames_processed = 0;
 
-    let actual_sample_rate = 47_800;
+    // test with emitting data faster than the soundcard is running at
+    let actual_sample_rate = 50_000;
 
     loop {
-        'block: for _ in 0..1024 {
+        'block: for _ in 0..buffer_size {
             for _ in 0..sink.channels() {
                 if let Err(_) = sink.data_out.push(t_sin.sin() as f32 * 0.02) {
                     // println!("overrun");

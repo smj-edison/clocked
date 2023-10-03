@@ -1,5 +1,7 @@
+use std::ops::IndexMut;
+
 pub const FRAME_LOOKBACK: usize = 4;
-pub const ROLLING_AVG_LENGTH: usize = 4;
+pub const ROLLING_AVG_LENGTH: usize = 8;
 
 pub(crate) fn hermite_interpolate(x0: f32, x1: f32, x2: f32, x3: f32, t: f32) -> f32 {
     let diff = x1 - x2;
@@ -20,14 +22,14 @@ pub fn new_samples_needed(resample_ratio: f64, time: f64) -> usize {
 /// # Arguments
 ///
 /// * `resample_ratio` - input_sample_rate / output_sample_rate
-/// * `new_samples_in` - an array with _new_ incoming samples (use [`new_samples_needed`]
+/// * `new_samples_in` - an interator with _new_ incoming samples (use [`new_samples_needed`]
 ///    to figure out how many new samples are needed)
-/// * `last` - an array with the previous values
+/// * `last` - a indexable container with the previous values
 /// * `time` - ref to current time fraction [0.0, 1.0)
 pub fn resample(
     resample_ratio: f64,
     mut new_samples_in: impl Iterator<Item = f32>,
-    last: &mut [f32; FRAME_LOOKBACK],
+    last: &mut impl IndexMut<usize, Output = f32>,
     mut time: f64,
 ) -> (f32, f64) {
     let out = hermite_interpolate(last[0], last[1], last[2], last[3], time as f32);
