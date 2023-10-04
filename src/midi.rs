@@ -56,13 +56,13 @@ pub struct MidiMessage {
 }
 
 /// returns `None` if there isn't enough data to tell what length is needed
-fn expected_message_length(buffer: &mut VecDeque<u8>) -> Option<usize> {
+fn prep_message(buffer: &mut VecDeque<u8>) -> Option<usize> {
     while !buffer.is_empty() && buffer[0] & 0x80 == 0 {
         // shift through the buffer until we hit a viable message
         buffer.pop_front();
     }
 
-    if let Some(first_byte) = buffer.pop_front() {
+    if let Some(first_byte) = buffer.get(0).copied() {
         if first_byte >= 0x80 && first_byte <= 0xEF {
             // Voice messages
             let message = first_byte >> 4;
@@ -88,7 +88,7 @@ fn expected_message_length(buffer: &mut VecDeque<u8>) -> Option<usize> {
                             // drop all of the (failed) sysex message
                             buffer.drain(0..i);
 
-                            return expected_message_length(buffer);
+                            return prep_message(buffer);
                         }
                     }
 
@@ -125,7 +125,7 @@ fn n(buffer: &mut VecDeque<u8>) -> u8 {
 }
 
 pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
-    let needed = expected_message_length(buffer);
+    let needed = prep_message(buffer);
 
     let enough_in_buffer = if let Some(needed) = needed {
         buffer.len() >= needed
@@ -142,14 +142,14 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
             let channel = first_byte & 0x0F;
 
             match message {
-                // note on
-                0x8 => Some(MidiData::NoteOn {
+                // note off
+                0x8 => Some(MidiData::NoteOff {
                     channel,
                     note: n(buffer) & 0x7F,
                     velocity: n(buffer) & 0x7F,
                 }),
-                // note off
-                0x9 => Some(MidiData::NoteOff {
+                // note on
+                0x9 => Some(MidiData::NoteOn {
                     channel,
                     note: n(buffer) & 0x7F,
                     velocity: n(buffer) & 0x7F,

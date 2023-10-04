@@ -8,6 +8,9 @@ use crate::{
     CompensationStrategy, PidSettings,
 };
 
+/// A stream sink, to be called from an audio callback. Using half of a ring
+/// buffer, it will automatically compensate for xruns by resampling in real-time
+/// (currently implemented using a PID targeting half ring capacity).
 pub struct StreamSink {
     /// Incoming samples
     ring_in: rtrb::Consumer<f32>,
