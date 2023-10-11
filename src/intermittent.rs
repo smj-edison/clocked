@@ -1,4 +1,3 @@
-use core::fmt;
 use std::{collections::VecDeque, sync::mpsc, time::Duration};
 
 use crate::DeltaDuration;
@@ -34,8 +33,28 @@ pub struct TimedValue<T> {
     pub value: T,
 }
 
-pub struct IntermittentSink<T> {
-    channel_in: mpsc::Receiver<T>,
+pub struct IntermittentSink<Output> {
+    channel_in: mpsc::Receiver<Output>,
+    send: Box<dyn FnMut(Output)>,
+}
+
+impl<Output> IntermittentSink<Output> {
+    pub fn new<F>(channel_in: mpsc::Receiver<Output>, send: F) -> Self
+    where
+        F: FnMut(Output) + 'static,
+    {
+        IntermittentSink {
+            channel_in,
+            send: Box::new(send),
+        }
+    }
+
+    /// this function blocks; probably best to run in a thread
+    pub fn start(&mut self) {
+        while let Ok(value) = self.channel_in.recv() {
+            (self.send)(value);
+        }
+    }
 }
 
 pub struct IntermittentSource<Input, Converted> {
@@ -44,7 +63,7 @@ pub struct IntermittentSource<Input, Converted> {
     mapper: StreamMapper<Input, Converted>,
 }
 
-impl<Input: fmt::Debug, Converted: fmt::Debug> IntermittentSource<Input, Converted> {
+impl<Input, Converted> IntermittentSource<Input, Converted> {
     pub fn new<F>(out: mpsc::Sender<TimedValue<Converted>>, convert: F) -> Self
     where
         F: FnMut(&mut VecDeque<Input>, Duration) -> Option<TimedValue<Converted>> + 'static + Send,

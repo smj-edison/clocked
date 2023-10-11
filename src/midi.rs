@@ -202,7 +202,7 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
                 0x1 => {
                     // quarter frame
                     let data_byte = n(buffer) & 0x7F;
-                    let value_type = data_byte >> 4;
+                    let value_type = (data_byte >> 4) & 0x0F;
                     let value = data_byte & 0x0F;
 
                     Some(MidiData::SysCommon(SysCommon::QuarterFrame {
