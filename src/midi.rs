@@ -266,28 +266,28 @@ pub fn data_to_bytes(message: &MidiData, writer: &mut impl std::io::Write) -> Re
             channel,
             note,
             velocity,
-        } => writer.write(&[0x80 & (channel & 0x0F), *note, *velocity]),
+        } => writer.write(&[0x80 | (channel & 0x0F), *note, *velocity]),
         MidiData::NoteOn {
             channel,
             note,
             velocity,
-        } => writer.write(&[0x90 & (channel & 0x0F), *note, *velocity]),
+        } => writer.write(&[0x90 | (channel & 0x0F), *note, *velocity]),
         MidiData::Aftertouch {
             channel,
             note,
             pressure,
-        } => writer.write(&[0xA0 & (channel & 0x0F), *note, *pressure]),
+        } => writer.write(&[0xA0 | (channel & 0x0F), *note, *pressure]),
         MidiData::ControlChange {
             channel,
             controller,
             value,
-        } => writer.write(&[0xB0 & (channel & 0x0F), *controller, *value]),
-        MidiData::ProgramChange { channel, patch } => writer.write(&[0xC0 & (channel & 0x0F), *patch]),
-        MidiData::ChannelPressure { channel, pressure } => writer.write(&[0xD0 & (channel & 0x0F), *pressure]),
+        } => writer.write(&[0xB0 | (channel & 0x0F), *controller, *value]),
+        MidiData::ProgramChange { channel, patch } => writer.write(&[0xC0 | (channel & 0x0F), *patch]),
+        MidiData::ChannelPressure { channel, pressure } => writer.write(&[0xD0 | (channel & 0x0F), *pressure]),
         MidiData::PitchBend { channel, pitch_bend } => {
             let split_pitch_bend = u16_to_midi_bytes(*pitch_bend);
 
-            writer.write(&[0xE0 & (channel & 0x0F), split_pitch_bend[0], split_pitch_bend[1]])
+            writer.write(&[0xE0 | (channel & 0x0F), split_pitch_bend[0], split_pitch_bend[1]])
         }
         MidiData::SysCommon(msg) => match msg {
             SysCommon::QuarterFrame { time_fragment } => match time_fragment {

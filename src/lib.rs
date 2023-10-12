@@ -5,6 +5,8 @@ mod stream;
 
 #[cfg(feature = "client_impls")]
 pub mod cpal;
+#[cfg(feature = "client_impls")]
+pub mod midir;
 
 use std::time::Duration;
 

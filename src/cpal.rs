@@ -3,15 +3,8 @@ use std::time::{Duration, Instant};
 use cpal::{traits::DeviceTrait, Device, SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
 use dasp_sample::Sample;
 use rtrb::{Consumer, RingBuffer};
-use snafu::{ResultExt, Snafu};
 
 use crate::{StreamSink, StreamSource};
-
-#[derive(Snafu, Debug)]
-pub enum CpalError {
-    #[snafu(display("Build stream error: {source}"))]
-    BuildStreamError { source: cpal::BuildStreamError },
-}
 
 pub struct CpalSource {
     _stream: Stream,
@@ -22,7 +15,7 @@ pub fn start_cpal_source(
     device: Device,
     config: &SupportedStreamConfig,
     ring_buffer_size: usize,
-) -> Result<CpalSource, CpalError> {
+) -> Result<CpalSource, cpal::BuildStreamError> {
     let (producer, consumer) = RingBuffer::new(ring_buffer_size);
 
     let mut manager = StreamSource::with_defaults(producer, config.channels() as usize);
@@ -31,86 +24,66 @@ pub fn start_cpal_source(
     let cfg: StreamConfig = config.clone().into();
 
     let stream = match config.sample_format() {
-        cpal::SampleFormat::I8 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<i8>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::I16 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<i16>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::I32 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<i32>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::I64 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<i64>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U8 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<u8>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U16 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<u16>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U32 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<u32>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U64 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<u64>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::F32 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<f32>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::F64 => device
-            .build_input_stream(
-                &cfg,
-                move |data, _: &_| input_callback::<f64>(data, &mut manager, callback_start),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
+        cpal::SampleFormat::I8 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<i8>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::I16 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<i16>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::I32 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<i32>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::I64 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<i64>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U8 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<u8>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U16 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<u16>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U32 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<u32>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U64 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<u64>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::F32 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<f32>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::F64 => device.build_input_stream(
+            &cfg,
+            move |data, _: &_| input_callback::<f64>(data, &mut manager, callback_start),
+            |_| {},
+            None,
+        )?,
         _ => {
             unreachable!("this program has crashed due to a `TooManyObfuscatingAbstractions` error")
         }
@@ -154,7 +127,7 @@ pub fn start_cpal_sink(
     sample_format: SampleFormat,
     buffer_size: usize,
     periods: usize,
-) -> Result<CpalSink, CpalError> {
+) -> Result<CpalSink, cpal::BuildStreamError> {
     let channels = config.channels;
     let ring_buffer_size = buffer_size * channels as usize * periods;
 
@@ -169,86 +142,66 @@ pub fn start_cpal_sink(
     let cfg: StreamConfig = config.clone().into();
 
     let stream = match sample_format {
-        cpal::SampleFormat::I8 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<i8>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::I16 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<i16>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::I32 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<i32>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::I64 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<i64>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U8 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<u8>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U16 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<u16>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U32 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<u32>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::U64 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<u64>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::F32 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
-        cpal::SampleFormat::F64 => device
-            .build_output_stream(
-                &cfg,
-                move |data, _: &_| output_callback::<f64>(data, &mut manager, &mut scratch, callback_start.clone()),
-                |_| {},
-                None,
-            )
-            .context(BuildStreamSnafu)?,
+        cpal::SampleFormat::I8 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<i8>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::I16 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<i16>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::I32 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<i32>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::I64 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<i64>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U8 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<u8>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U16 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<u16>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U32 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<u32>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::U64 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<u64>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::F32 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
+        cpal::SampleFormat::F64 => device.build_output_stream(
+            &cfg,
+            move |data, _: &_| output_callback::<f64>(data, &mut manager, &mut scratch, callback_start.clone()),
+            |_| {},
+            None,
+        )?,
         _ => {
             unreachable!("this program has crashed due to a `TooManyObfuscatingAbstractions` error")
         }

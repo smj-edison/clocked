@@ -2,10 +2,9 @@ use std::{
     error::Error,
     io::{stdin, stdout, Write},
     sync::mpsc,
-    time::{Duration, Instant},
 };
 
-use clocked::{midi::parse_midi, IntermittentSource, TimedValue};
+use clocked::midir::start_midir_source;
 use midir::{Ignore, MidiInput};
 
 // mostly copied from midir's examples
@@ -53,28 +52,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let in_port_name = midi_in.port_name(in_port)?;
 
     let (sender, receiver) = mpsc::channel();
-    let mut interm = IntermittentSource::new(sender, |buffer, time| {
-        parse_midi(buffer).map(|parsed| TimedValue {
-            since_start: time,
-            value: parsed,
-        })
-    });
-
-    let start = Instant::now();
 
     // _conn_in needs to be a named parameter, because it needs to be kept alive until the end of the scope
-    let _conn_in = midi_in.connect(
-        in_port,
-        "midir-read-input",
-        move |stamp, message, _| {
-            interm.input_messages(
-                message.iter().copied(),
-                Instant::now() - start,
-                Duration::from_micros(stamp),
-            );
-        },
-        (),
-    )?;
+    let _conn_in = start_midir_source(midi_in, in_port, "clocked-read-input", sender)?;
 
     println!("Connection open, reading input from '{}'.", in_port_name);
 
