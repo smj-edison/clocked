@@ -2,9 +2,11 @@ use std::{collections::VecDeque, sync::mpsc, time::Duration};
 
 use crate::DeltaDuration;
 
+type MapFunc<In, Out> = Box<dyn FnMut(&mut VecDeque<In>, Duration) -> Option<TimedValue<Out>> + Send>;
+
 pub struct StreamMapper<In, Out> {
     pub values_in: VecDeque<In>,
-    step: Box<dyn FnMut(&mut VecDeque<In>, Duration) -> Option<TimedValue<Out>> + Send>,
+    step: MapFunc<In, Out>,
 }
 
 impl<In, Out> StreamMapper<In, Out> {

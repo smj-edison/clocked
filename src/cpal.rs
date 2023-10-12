@@ -33,7 +33,7 @@ pub fn start_cpal_source(
     let mut manager = StreamSource::with_defaults(producer, channels);
     let callback_start = Instant::now();
 
-    let cfg: StreamConfig = config.clone().into();
+    let cfg: StreamConfig = config.clone();
 
     let stream = match sample_format {
         cpal::SampleFormat::I8 => device.build_input_stream(
@@ -152,66 +152,66 @@ pub fn start_cpal_sink(
 
     let callback_start = Instant::now();
 
-    let cfg: StreamConfig = config.clone().into();
+    let cfg: StreamConfig = config.clone();
 
     let stream = match sample_format {
         cpal::SampleFormat::I8 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i8>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<i8>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::I16 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i16>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<i16>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::I32 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i32>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<i32>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::I64 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i64>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<i64>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U8 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u8>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<u8>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U16 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u16>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<u16>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U32 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u32>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<u32>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U64 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u64>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<u64>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::F32 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::F64 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<f64>(data, &mut manager, &mut scratch, callback_start.clone()),
+            move |data, _: &_| output_callback::<f64>(data, &mut manager, &mut scratch, callback_start),
             |_| {},
             None,
         )?,

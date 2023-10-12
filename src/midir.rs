@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub struct MidirSource {
-    instance: MidiInputConnection<()>,
+    _instance: MidiInputConnection<()>,
 }
 
 pub fn start_midir_source(
@@ -46,11 +46,11 @@ pub fn start_midir_source(
         (),
     )?;
 
-    Ok(MidirSource { instance })
+    Ok(MidirSource { _instance: instance })
 }
 
 pub struct MidirSink {
-    handle: JoinHandle<()>,
+    _handle: JoinHandle<()>,
 }
 
 struct MidiOutputConnectionWrapper(MidiOutputConnection);
@@ -80,7 +80,7 @@ pub fn start_midi_sink(
     let mut conn_out = MidiOutputConnectionWrapper(device.connect(port, name)?);
 
     Ok(MidirSink {
-        handle: thread::spawn(move || {
+        _handle: thread::spawn(move || {
             while let Ok(message) = stream.recv() {
                 let _ = midi::data_to_bytes(&message, &mut conn_out);
             }

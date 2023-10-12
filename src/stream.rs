@@ -59,8 +59,8 @@ impl StreamSink {
 
         StreamSink {
             ring_in,
-            ring_size: ring_size,
-            channels: channels,
+            ring_size,
+            channels,
             last_frames: DMatrix::zeros(FRAME_LOOKBACK, channels),
             pid_settings,
             rolling_ring_avg: [0; ROLLING_AVG_LENGTH],
@@ -97,7 +97,7 @@ impl StreamSink {
         let align = (self.channels - channel_i) % self.channels;
 
         for _ in 0..align {
-            while let Err(_) = self.ring_in.pop() {
+            while self.ring_in.pop().is_err() {
                 thread::sleep(Duration::from_micros(50));
             }
         }
@@ -124,7 +124,7 @@ impl StreamSink {
     /// * `buffer_out` - audio callback buffer to be written into
     /// * `measure_xruns` - whether to measure xruns. Helpful for startup, as there may be some xruns
     ///    while things are all getting set up (which should not be counted for compensation check).
-    pub fn output_samples<'a>(&mut self, buffer_out: &mut [f32], measure_xruns: bool) {
+    pub fn output_samples(&mut self, buffer_out: &mut [f32], measure_xruns: bool) {
         assert_eq!(buffer_out.len() % self.channels, 0);
 
         let frames_out_len = buffer_out.len() / self.channels;
@@ -311,12 +311,12 @@ impl StreamSource {
             ring_size,
             last_frames: DMatrix::zeros(FRAME_LOOKBACK, channels),
             local_buffer: VecDeque::with_capacity(ring_size),
-            pid_settings: pid_settings,
+            pid_settings,
             rolling_ring_avg: [0; ROLLING_AVG_LENGTH],
             ring_integral: 0.0,
             last_avg: 0.0,
             xruns: 0,
-            compensation_start_threshold: compensation_start_threshold,
+            compensation_start_threshold,
             strategy: CompensationStrategy::None,
             resample_scratch: DMatrix::zeros(4, channels),
         }
@@ -346,7 +346,7 @@ impl StreamSource {
         let align = (self.channels - channel_i) % self.channels;
 
         for _ in 0..align {
-            while let Err(_) = self.ring_out.push(0.0) {
+            while self.ring_out.push(0.0).is_err() {
                 thread::sleep(Duration::from_micros(50));
             }
         }
@@ -431,7 +431,7 @@ impl StreamSource {
         match self.strategy {
             CompensationStrategy::None | CompensationStrategy::Never => {
                 for (i, sample) in self.local_buffer.iter().enumerate() {
-                    if let Err(_) = self.ring_out.push(*sample) {
+                    if self.ring_out.push(*sample).is_err() {
                         self.clean_up(i % self.channels, measure_xruns);
 
                         return;
@@ -464,7 +464,7 @@ impl StreamSource {
 
                             time = new_time;
 
-                            if let Err(_) = self.ring_out.push(out) {
+                            if self.ring_out.push(out).is_err() {
                                 self.clean_up(channel_i, measure_xruns);
 
                                 return;

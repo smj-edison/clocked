@@ -291,14 +291,14 @@ pub fn data_to_bytes(message: &MidiData, writer: &mut impl std::io::Write) -> Re
         }
         MidiData::SysCommon(msg) => match msg {
             SysCommon::QuarterFrame { time_fragment } => match time_fragment {
-                Timecode::FrameLow(u8) => writer.write(&[0xF1, 0x00 & (u8 & 0x0F)]),
-                Timecode::FrameHigh(u8) => writer.write(&[0xF1, 0x10 & (u8 & 0x0F)]),
-                Timecode::SecondsLow(u8) => writer.write(&[0xF1, 0x20 & (u8 & 0x0F)]),
-                Timecode::SecondsHigh(u8) => writer.write(&[0xF1, 0x30 & (u8 & 0x0F)]),
-                Timecode::MinutesLow(u8) => writer.write(&[0xF1, 0x40 & (u8 & 0x0F)]),
-                Timecode::MinutesHigh(u8) => writer.write(&[0xF1, 0x50 & (u8 & 0x0F)]),
-                Timecode::HoursLow(u8) => writer.write(&[0xF1, 0x60 & (u8 & 0x0F)]),
-                Timecode::HoursHigh(u8) => writer.write(&[0xF1, 0x70 & (u8 & 0x0F)]),
+                Timecode::FrameLow(u8) => writer.write(&[0xF1, 0x00 | (u8 & 0x0F)]),
+                Timecode::FrameHigh(u8) => writer.write(&[0xF1, 0x10 | (u8 & 0x0F)]),
+                Timecode::SecondsLow(u8) => writer.write(&[0xF1, 0x20 | (u8 & 0x0F)]),
+                Timecode::SecondsHigh(u8) => writer.write(&[0xF1, 0x30 | (u8 & 0x0F)]),
+                Timecode::MinutesLow(u8) => writer.write(&[0xF1, 0x40 | (u8 & 0x0F)]),
+                Timecode::MinutesHigh(u8) => writer.write(&[0xF1, 0x50 | (u8 & 0x0F)]),
+                Timecode::HoursLow(u8) => writer.write(&[0xF1, 0x60 | (u8 & 0x0F)]),
+                Timecode::HoursHigh(u8) => writer.write(&[0xF1, 0x70 | (u8 & 0x0F)]),
             },
             SysCommon::SongPositionPointer { position } => {
                 let split_position = u16_to_midi_bytes(*position);
@@ -311,7 +311,7 @@ pub fn data_to_bytes(message: &MidiData, writer: &mut impl std::io::Write) -> Re
         MidiData::SysRt(msg) => writer.write(&[*msg as u8]),
         MidiData::SysEx { id_and_data } => writer
             .write(&[0xF0])
-            .and_then(|written| writer.write(&id_and_data).map(|x| x + written))
+            .and_then(|written| writer.write(id_and_data).map(|x| x + written))
             .and_then(|written| writer.write(&[0xF7]).map(|x| x + written)),
         MidiData::MidiNone => Ok(0),
     }
