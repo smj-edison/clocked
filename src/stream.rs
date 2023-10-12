@@ -136,10 +136,13 @@ impl StreamSink {
         }
 
         if self.xruns >= self.compensation_start_threshold {
+            let avg = self.rolling_ring_avg.iter().map(|x| *x as f64).sum::<f64>()
+                / self.rolling_ring_avg.len() as f64
+                / self.ring_size as f64;
+
             // target is half of capacity
             // TODO: let target be more flexible
-            let target = self.ring_size as f64 / 2.0;
-            let avg = self.rolling_ring_avg.iter().map(|x| *x as f64).sum::<f64>() / self.rolling_ring_avg.len() as f64;
+            let target = 0.5;
             let error = avg - target;
 
             self.ring_integral += error;
@@ -368,7 +371,7 @@ impl StreamSource {
     pub fn input_samples(&mut self, buffer_in: impl IntoIterator<Item = f32>, buffer_len: usize, measure_xruns: bool) {
         let ring_slots = self.ring_out.slots();
 
-        if ring_slots == 0 {
+        if ring_slots < 10 {
             self.handle_xrun(measure_xruns);
         }
 
@@ -377,11 +380,13 @@ impl StreamSource {
 
         self.local_buffer.extend(buffer_in);
 
-        // process a few samples before estimating sample rate
         if self.xruns > self.compensation_start_threshold {
-            // target is two thirds of ring capacity
-            let target = self.ring_size as f64 * (2.0 / 3.0);
-            let avg = self.rolling_ring_avg.iter().map(|x| *x as f64).sum::<f64>() / self.rolling_ring_avg.len() as f64;
+            // target is half of capacity
+            // TODO: let target be more flexible
+            let target = 0.5;
+            let avg = self.rolling_ring_avg.iter().map(|x| *x as f64).sum::<f64>()
+                / self.rolling_ring_avg.len() as f64
+                / self.ring_size as f64;
             let error = avg - target;
 
             self.ring_integral += error;
@@ -420,13 +425,16 @@ impl StreamSource {
             }
         }
 
+        self.rolling_ring_avg.rotate_left(1);
+        self.rolling_ring_avg[self.rolling_ring_avg.len() - 1] = ring_slots;
+
         match self.strategy {
             CompensationStrategy::None | CompensationStrategy::Never => {
                 for (i, sample) in self.local_buffer.iter().enumerate() {
                     if let Err(_) = self.ring_out.push(*sample) {
                         self.clean_up(i % self.channels, measure_xruns);
 
-                        break;
+                        return;
                     }
                 }
 
@@ -456,16 +464,16 @@ impl StreamSource {
 
                             time = new_time;
 
-                            self.local_buffer.drain(0..(self.channels * new_sample_count));
-
                             if let Err(_) = self.ring_out.push(out) {
                                 self.clean_up(channel_i, measure_xruns);
 
-                                break;
+                                return;
                             }
                         }
+
+                        self.local_buffer.drain(0..(self.channels * new_sample_count));
                     } else {
-                        break;
+                        return;
                     }
                 }
             }

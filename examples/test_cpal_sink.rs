@@ -26,7 +26,7 @@ fn main() {
         BufferSize::Fixed(buffer_size) => Some(buffer_size as usize),
         BufferSize::Default => None,
     }
-    .unwrap();
+    .unwrap_or(1024);
 
     println!("buffer size: {}", buffer_size);
     println!("sample rate: {}", config.sample_rate.0);
@@ -43,7 +43,7 @@ fn main() {
     loop {
         'block: for _ in 0..buffer_size {
             for _ in 0..sink.channels() {
-                if let Err(_) = sink.data_out.push(t_sin.sin() as f32 * 0.02) {
+                if let Err(_) = sink.interleaved_out.push(t_sin.sin() as f32 * 0.02) {
                     // println!("overrun");
 
                     break 'block;
@@ -51,9 +51,9 @@ fn main() {
             }
 
             t_sin += (440.0 / config.sample_rate.0 as f64) * TAU;
-
-            frames_processed += 1;
         }
+
+        frames_processed += buffer_size;
 
         let buffer_time_secs = frames_processed as f64 / actual_sample_rate as f64;
         let now_secs = (Instant::now() - start).as_secs_f64();

@@ -44,12 +44,12 @@ pub struct PidSettings {
 impl Default for PidSettings {
     fn default() -> Self {
         PidSettings {
-            prop_factor: 0.00001,
-            integ_factor: 0.00000007,
-            deriv_factor: 0.00001,
+            prop_factor: 0.01,
+            integ_factor: 0.00003,
+            deriv_factor: 0.002,
             min_factor: -0.2,
             max_factor: 0.2,
-            factor_last_interp: 0.05,
+            factor_last_interp: 0.1,
         }
     }
 }

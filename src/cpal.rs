@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use cpal::{traits::DeviceTrait, Device, SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
+use cpal::{traits::DeviceTrait, Device, SampleFormat, Stream, StreamConfig};
 use dasp_sample::Sample;
 use rtrb::{Consumer, RingBuffer};
 
@@ -9,21 +9,33 @@ use crate::{StreamSink, StreamSource};
 pub struct CpalSource {
     _stream: Stream,
     pub interleaved_in: Consumer<f32>,
+    channels: usize,
+}
+
+impl CpalSource {
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
 }
 
 pub fn start_cpal_source(
     device: Device,
-    config: &SupportedStreamConfig,
-    ring_buffer_size: usize,
+    config: &StreamConfig,
+    sample_format: SampleFormat,
+    buffer_size: usize,
+    periods: usize,
 ) -> Result<CpalSource, cpal::BuildStreamError> {
+    let channels = config.channels as usize;
+    let ring_buffer_size = buffer_size * channels * periods;
+
     let (producer, consumer) = RingBuffer::new(ring_buffer_size);
 
-    let mut manager = StreamSource::with_defaults(producer, config.channels() as usize);
+    let mut manager = StreamSource::with_defaults(producer, channels);
     let callback_start = Instant::now();
 
     let cfg: StreamConfig = config.clone().into();
 
-    let stream = match config.sample_format() {
+    let stream = match sample_format {
         cpal::SampleFormat::I8 => device.build_input_stream(
             &cfg,
             move |data, _: &_| input_callback::<i8>(data, &mut manager, callback_start),
@@ -93,6 +105,7 @@ pub fn start_cpal_source(
     Ok(CpalSource {
         _stream: stream,
         interleaved_in: consumer,
+        channels,
     })
 }
 
@@ -111,7 +124,7 @@ where
 
 pub struct CpalSink {
     _stream: Stream,
-    pub data_out: rtrb::Producer<f32>,
+    pub interleaved_out: rtrb::Producer<f32>,
     channels: usize,
 }
 
@@ -210,7 +223,7 @@ pub fn start_cpal_sink(
     // finally
     Ok(CpalSink {
         _stream: stream,
-        data_out: producer,
+        interleaved_out: producer,
         channels: channels as usize,
     })
 }
