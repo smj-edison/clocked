@@ -8,29 +8,29 @@ pub enum Timecode {
     SecondsLow(u8),
     SecondsHigh(u8),
     MinutesLow(u8),
-    MinuteHigh(u8),
-    HourLow(u8),
-    HourHigh(u8),
+    MinutesHigh(u8),
+    HoursLow(u8),
+    HoursHigh(u8),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SysCommon {
-    SystemExclusive { message: Vec<u8> },
     QuarterFrame { time_fragment: Timecode },
     SongPositionPointer { position: u16 },
     SongSelect { song: u8 },
     TuneRequest,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum SysRt {
-    MidiClock,
-    Tick,
-    Start,
-    Continue,
-    Stop,
-    ActiveSensing,
-    Reset,
+    MidiClock = 0xF8,
+    Tick = 0xF9,
+    Start = 0xFA,
+    Continue = 0xFB,
+    Stop = 0xFC,
+    ActiveSensing = 0xFE,
+    Reset = 0xFF,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,12 +40,11 @@ pub enum MidiData {
     Aftertouch { channel: u8, note: u8, pressure: u8 },
     ControlChange { channel: u8, controller: u8, value: u8 },
     ProgramChange { channel: u8, patch: u8 },
-    ChannelAftertouch { channel: u8, pressure: u8 },
+    ChannelPressure { channel: u8, pressure: u8 },
     PitchBend { channel: u8, pitch_bend: u16 },
     SysCommon(SysCommon),
     SysRt(SysRt),
     SysEx { id_and_data: Vec<u8> },
-    Reset,
     MidiNone,
 }
 
@@ -168,7 +167,7 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
                     channel,
                     patch: n(buffer) & 0x7F,
                 }), // program change
-                0xD => Some(MidiData::ChannelAftertouch {
+                0xD => Some(MidiData::ChannelPressure {
                     channel,
                     pressure: n(buffer) & 0x7F,
                 }), // channel pressure
@@ -212,9 +211,9 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
                             2 => Timecode::SecondsLow(value),
                             3 => Timecode::SecondsHigh(value),
                             4 => Timecode::MinutesLow(value),
-                            5 => Timecode::MinuteHigh(value),
-                            6 => Timecode::HourLow(value),
-                            7 => Timecode::HourHigh(value),
+                            5 => Timecode::MinutesHigh(value),
+                            6 => Timecode::HoursLow(value),
+                            7 => Timecode::HoursHigh(value),
                             _ => unreachable!("value_type cannot be more than 7"),
                         },
                     }))
@@ -250,7 +249,7 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
                 // active sensing
                 0xE => Some(MidiData::SysRt(SysRt::ActiveSensing)),
                 // system reset
-                0xF => Some(MidiData::Reset),
+                0xF => Some(MidiData::SysRt(SysRt::Reset)),
                 _ => unreachable!("only matching & 0x0F"),
             }
         } else {
@@ -259,4 +258,68 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
     } else {
         None
     }
+}
+
+pub fn data_to_bytes(message: &MidiData, writer: &mut impl std::io::Write) -> Result<usize, std::io::Error> {
+    match message {
+        MidiData::NoteOff {
+            channel,
+            note,
+            velocity,
+        } => writer.write(&[0x80 & (channel & 0x0F), *note, *velocity]),
+        MidiData::NoteOn {
+            channel,
+            note,
+            velocity,
+        } => writer.write(&[0x90 & (channel & 0x0F), *note, *velocity]),
+        MidiData::Aftertouch {
+            channel,
+            note,
+            pressure,
+        } => writer.write(&[0xA0 & (channel & 0x0F), *note, *pressure]),
+        MidiData::ControlChange {
+            channel,
+            controller,
+            value,
+        } => writer.write(&[0xB0 & (channel & 0x0F), *controller, *value]),
+        MidiData::ProgramChange { channel, patch } => writer.write(&[0xC0 & (channel & 0x0F), *patch]),
+        MidiData::ChannelPressure { channel, pressure } => writer.write(&[0xD0 & (channel & 0x0F), *pressure]),
+        MidiData::PitchBend { channel, pitch_bend } => {
+            let split_pitch_bend = u16_to_midi_bytes(*pitch_bend);
+
+            writer.write(&[0xE0 & (channel & 0x0F), split_pitch_bend[0], split_pitch_bend[1]])
+        }
+        MidiData::SysCommon(msg) => match msg {
+            SysCommon::QuarterFrame { time_fragment } => match time_fragment {
+                Timecode::FrameLow(u8) => writer.write(&[0xF1, 0x00 & (u8 & 0x0F)]),
+                Timecode::FrameHigh(u8) => writer.write(&[0xF1, 0x10 & (u8 & 0x0F)]),
+                Timecode::SecondsLow(u8) => writer.write(&[0xF1, 0x20 & (u8 & 0x0F)]),
+                Timecode::SecondsHigh(u8) => writer.write(&[0xF1, 0x30 & (u8 & 0x0F)]),
+                Timecode::MinutesLow(u8) => writer.write(&[0xF1, 0x40 & (u8 & 0x0F)]),
+                Timecode::MinutesHigh(u8) => writer.write(&[0xF1, 0x50 & (u8 & 0x0F)]),
+                Timecode::HoursLow(u8) => writer.write(&[0xF1, 0x60 & (u8 & 0x0F)]),
+                Timecode::HoursHigh(u8) => writer.write(&[0xF1, 0x70 & (u8 & 0x0F)]),
+            },
+            SysCommon::SongPositionPointer { position } => {
+                let split_position = u16_to_midi_bytes(*position);
+
+                writer.write(&[0xF2, split_position[0], split_position[1]])
+            }
+            SysCommon::SongSelect { song } => writer.write(&[0xF3, *song]),
+            SysCommon::TuneRequest => writer.write(&[0xF6]),
+        },
+        MidiData::SysRt(msg) => writer.write(&[*msg as u8]),
+        MidiData::SysEx { id_and_data } => writer
+            .write(&[0xF0])
+            .and_then(|written| writer.write(&id_and_data).map(|x| x + written))
+            .and_then(|written| writer.write(&[0xF7]).map(|x| x + written)),
+        MidiData::MidiNone => Ok(0),
+    }
+}
+
+fn u16_to_midi_bytes(x: u16) -> [u8; 2] {
+    let high = ((x >> 7) & 0x7F) as u8;
+    let low = (x & 0x7F) as u8;
+
+    [low, high]
 }
