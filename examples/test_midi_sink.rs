@@ -1,6 +1,5 @@
 use std::{
     io::{stdin, stdout, Write},
-    sync::mpsc,
     thread,
     time::Duration,
 };
@@ -45,22 +44,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let (sender, receiver) = mpsc::channel();
-
     println!("\nOpening connection");
-    let _conn_out = start_midi_sink(midi_out, out_port, "clocked-out-test", receiver)?;
+    let conn_out = start_midi_sink(midi_out, out_port, "clocked-out-test")?;
     println!("Connection open. Listen!");
 
     let play_note = |note: u8, duration: u64| {
         // We're ignoring errors in here
-        let _ = sender.send(MidiData::NoteOn {
+        let _ = conn_out.sender.send(MidiData::NoteOn {
             channel: 0,
             note: note,
             velocity: 0x64,
         });
 
         thread::sleep(Duration::from_millis(duration * 150));
-        let _ = sender.send(MidiData::NoteOff {
+        let _ = conn_out.sender.send(MidiData::NoteOff {
             channel: 0,
             note: note,
             velocity: 0x64,

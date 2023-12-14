@@ -51,14 +51,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("\nOpening connection...");
     let in_port_name = midi_in.port_name(in_port)?;
 
-    let (sender, receiver) = mpsc::channel();
-
-    // _conn_in needs to be a named parameter, because it needs to be kept alive until the end of the scope
-    let _conn_in = start_midir_source(midi_in, in_port, "clocked-read-input", sender)?;
+    let conn_in = start_midir_source(midi_in, in_port, "clocked-read-input")?;
 
     println!("Connection open, reading input from '{}'.", in_port_name);
 
-    while let Ok(message) = receiver.recv() {
+    while let Ok(message) = conn_in.receiver.recv() {
         println!("Parsed message: {:?}", message);
     }
 

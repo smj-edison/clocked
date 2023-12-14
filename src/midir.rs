@@ -1,6 +1,6 @@
 use std::{
     io,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{self},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -16,15 +16,17 @@ use crate::{
 
 pub struct MidirSource {
     _instance: MidiInputConnection<()>,
+    pub receiver: mpsc::Receiver<TimedValue<MidiData>>,
 }
 
 pub fn start_midir_source(
     device: MidiInput,
     port: &MidiInputPort,
     name: &str,
-    stream: Sender<TimedValue<MidiData>>,
 ) -> Result<MidirSource, ConnectError<MidiInput>> {
-    let mut interm = IntermittentSource::new(stream, |buffer, time| {
+    let (sender, receiver) = mpsc::channel();
+
+    let mut interm = IntermittentSource::new(sender, |buffer, time| {
         parse_midi(buffer).map(|parsed| TimedValue {
             since_start: time,
             value: parsed,
@@ -46,11 +48,15 @@ pub fn start_midir_source(
         (),
     )?;
 
-    Ok(MidirSource { _instance: instance })
+    Ok(MidirSource {
+        _instance: instance,
+        receiver: receiver,
+    })
 }
 
 pub struct MidirSink {
     _handle: JoinHandle<()>,
+    pub sender: mpsc::Sender<MidiData>,
 }
 
 struct MidiOutputConnectionWrapper(MidiOutputConnection);
@@ -75,15 +81,17 @@ pub fn start_midi_sink(
     device: MidiOutput,
     port: &MidiOutputPort,
     name: &str,
-    stream: Receiver<MidiData>,
 ) -> Result<MidirSink, ConnectError<MidiOutput>> {
+    let (sender, receiver) = mpsc::channel();
+
     let mut conn_out = MidiOutputConnectionWrapper(device.connect(port, name)?);
 
     Ok(MidirSink {
         _handle: thread::spawn(move || {
-            while let Ok(message) = stream.recv() {
-                let _ = midi::data_to_bytes(&message, &mut conn_out);
+            while let Ok(message) = receiver.recv() {
+                let _ = midi::write_midi_bytes(&message, &mut conn_out);
             }
         }),
+        sender,
     })
 }

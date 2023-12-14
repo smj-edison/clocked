@@ -260,7 +260,7 @@ pub fn parse_midi(buffer: &mut VecDeque<u8>) -> Option<MidiData> {
     }
 }
 
-pub fn data_to_bytes(message: &MidiData, writer: &mut impl std::io::Write) -> Result<usize, std::io::Error> {
+pub fn write_midi_bytes(message: &MidiData, writer: &mut impl std::io::Write) -> Result<usize, std::io::Error> {
     match message {
         MidiData::NoteOff {
             channel,
