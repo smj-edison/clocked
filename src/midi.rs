@@ -1,7 +1,15 @@
 use std::{collections::VecDeque, time::Duration};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// low and high are nibbles
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(tag = "variant", content = "data")
+)]
 pub enum Timecode {
     FrameLow(u8),
     FrameHigh(u8),
@@ -14,6 +22,11 @@ pub enum Timecode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(tag = "variant", content = "data")
+)]
 pub enum SysCommon {
     QuarterFrame { time_fragment: Timecode },
     SongPositionPointer { position: u16 },
@@ -23,6 +36,11 @@ pub enum SysCommon {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(tag = "variant", content = "data")
+)]
 pub enum SysRt {
     MidiClock = 0xF8,
     Tick = 0xF9,
@@ -34,6 +52,11 @@ pub enum SysRt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(tag = "variant", content = "data")
+)]
 pub enum MidiData {
     NoteOff { channel: u8, note: u8, velocity: u8 },
     NoteOn { channel: u8, note: u8, velocity: u8 },
@@ -49,6 +72,7 @@ pub enum MidiData {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MidiMessage {
     pub data: MidiData,
     pub timestamp: Duration,
