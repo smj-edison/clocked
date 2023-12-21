@@ -206,7 +206,9 @@ pub fn start_cpal_sink(
         cpal::SampleFormat::F32 => device.build_output_stream(
             &cfg,
             move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, callback_start),
-            |_| {},
+            |err| {
+                println!("sink error: {:?}", err);
+            },
             None,
         )?,
         cpal::SampleFormat::F64 => device.build_output_stream(
