@@ -10,7 +10,6 @@ use rtrb::{Consumer, RingBuffer};
 use crate::{StreamSink, StreamSource};
 
 pub struct CpalSource {
-    _stream: Stream,
     pub interleaved_in: Consumer<f32>,
     channels: usize,
 }
@@ -27,7 +26,7 @@ pub fn start_cpal_source(
     sample_format: SampleFormat,
     buffer_size: usize,
     periods: usize,
-) -> Result<CpalSource, cpal::BuildStreamError> {
+) -> Result<(Stream, CpalSource), cpal::BuildStreamError> {
     let channels = config.channels as usize;
     let ring_buffer_size = buffer_size * channels * periods;
 
@@ -105,11 +104,13 @@ pub fn start_cpal_source(
     };
 
     // finally
-    Ok(CpalSource {
-        _stream: stream,
-        interleaved_in: consumer,
-        channels,
-    })
+    Ok((
+        stream,
+        CpalSource {
+            interleaved_in: consumer,
+            channels,
+        },
+    ))
 }
 
 fn input_callback<T>(input: &[T], manager: &mut StreamSource, callback_start: Instant)
