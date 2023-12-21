@@ -19,7 +19,7 @@ impl CpalSource {
 }
 
 pub fn start_cpal_source(
-    device: Device,
+    device: &Device,
     config: &StreamConfig,
     sample_format: SampleFormat,
     buffer_size: usize,
@@ -135,7 +135,7 @@ impl CpalSink {
 }
 
 pub fn start_cpal_sink(
-    device: Device,
+    device: &Device,
     config: &StreamConfig,
     sample_format: SampleFormat,
     buffer_size: usize,

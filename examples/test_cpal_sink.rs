@@ -32,7 +32,14 @@ fn main() {
     println!("sample rate: {}", config.sample_rate.0);
 
     let mut t_sin: f64 = 0.0;
-    let mut sink = start_cpal_sink(output_device, &config, supported_config.sample_format(), buffer_size, 2).unwrap();
+    let mut sink = start_cpal_sink(
+        &output_device,
+        &config,
+        supported_config.sample_format(),
+        buffer_size,
+        2,
+    )
+    .unwrap();
 
     let start = Instant::now();
     let mut frames_processed = 0;
