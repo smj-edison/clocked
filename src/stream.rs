@@ -40,8 +40,6 @@ pub struct StreamSink {
 
     /// Scratch for use during resampling
     resample_scratch: DMatrix<f32>,
-
-    debug_counter: u64,
 }
 
 impl StreamSink {
@@ -72,7 +70,6 @@ impl StreamSink {
             compensation_start_threshold,
             resample_scratch: DMatrix::zeros(4, channels),
             xruns: 0,
-            debug_counter: 0,
         }
     }
 
@@ -132,8 +129,6 @@ impl StreamSink {
 
         let frames_out_len = buffer_out.len() / self.channels;
         let ring_slots = self.ring_in.slots();
-
-        println!("here");
 
         if ring_slots == self.ring_size {
             self.handle_xrun(measure_xruns);
@@ -245,12 +240,6 @@ impl StreamSink {
                 }
             }
         }
-
-        if self.debug_counter % 500 == 0 {
-            println!("{:?}", buffer_out);
-        }
-
-        self.debug_counter += 1;
     }
 
     /// Forces compensation to start

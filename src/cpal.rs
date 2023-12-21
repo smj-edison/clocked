@@ -1,6 +1,9 @@
 use std::time::{Duration, Instant};
 
-use cpal::{traits::DeviceTrait, Device, SampleFormat, Stream, StreamConfig};
+use cpal::{
+    traits::{DeviceTrait, StreamTrait},
+    Device, SampleFormat, Stream, StreamConfig,
+};
 use dasp_sample::Sample;
 use rtrb::{Consumer, RingBuffer};
 
@@ -221,6 +224,7 @@ pub fn start_cpal_sink(
             unreachable!("this program has crashed due to a `TooManyObfuscatingAbstractions` error")
         }
     };
+    stream.play().unwrap();
 
     // finally
     Ok(CpalSink {
