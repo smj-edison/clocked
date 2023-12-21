@@ -133,6 +133,8 @@ impl StreamSink {
         let frames_out_len = buffer_out.len() / self.channels;
         let ring_slots = self.ring_in.slots();
 
+        println!("here");
+
         if ring_slots == self.ring_size {
             self.handle_xrun(measure_xruns);
             // don't end function because of overrun
