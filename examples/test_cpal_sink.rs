@@ -32,7 +32,7 @@ fn main() {
     println!("sample rate: {}", config.sample_rate.0);
 
     let mut t_sin: f64 = 0.0;
-    let mut sink = start_cpal_sink(
+    let (_handle, mut sink) = start_cpal_sink(
         &output_device,
         &config,
         supported_config.sample_format(),

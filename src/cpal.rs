@@ -126,7 +126,6 @@ where
 }
 
 pub struct CpalSink {
-    _stream: Stream,
     pub interleaved_out: rtrb::Producer<f32>,
     channels: usize,
 }
@@ -143,7 +142,7 @@ pub fn start_cpal_sink(
     sample_format: SampleFormat,
     buffer_size: usize,
     periods: usize,
-) -> Result<CpalSink, cpal::BuildStreamError> {
+) -> Result<(Stream, CpalSink), cpal::BuildStreamError> {
     let channels = config.channels;
     let ring_buffer_size = buffer_size * channels as usize * periods;
 
@@ -227,11 +226,13 @@ pub fn start_cpal_sink(
     stream.play().unwrap();
 
     // finally
-    Ok(CpalSink {
-        _stream: stream,
-        interleaved_out: producer,
-        channels: channels as usize,
-    })
+    Ok((
+        stream,
+        CpalSink {
+            interleaved_out: producer,
+            channels: channels as usize,
+        },
+    ))
 }
 
 fn output_callback<T>(output: &mut [T], manager: &mut StreamSink, scratch: &mut Vec<f32>, callback_start: Instant)
