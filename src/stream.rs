@@ -125,7 +125,7 @@ impl StreamSink {
     /// * `measure_xruns` - whether to measure xruns. Helpful for startup, as there may be some xruns
     ///    while things are all getting set up (which should not be counted for compensation check).
     pub fn output_samples(&mut self, buffer_out: &mut [f32], measure_xruns: bool) {
-        assert_eq!(buffer_out.len() % self.channels, 0);
+        debug_assert_eq!(buffer_out.len() % self.channels, 0);
 
         let frames_out_len = buffer_out.len() / self.channels;
         let ring_slots = self.ring_in.slots();

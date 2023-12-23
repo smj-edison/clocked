@@ -55,7 +55,8 @@ fn main() {
     println!("buffer size: {}", buffer_size);
     println!("sample rate: {}", config.sample_rate.0);
 
-    let mut sink = start_cpal_source(&input_device, &config, supported_config.sample_format(), buffer_size, 2).unwrap();
+    let (_handle, mut source) =
+        start_cpal_source(&input_device, &config, supported_config.sample_format(), buffer_size, 2).unwrap();
 
     let start = Instant::now();
     let mut frames_processed = 0;
@@ -78,8 +79,8 @@ fn main() {
         let mut missed = 0;
 
         'block: for i in 0..buffer_size {
-            for _ in 0..sink.channels() {
-                if let Ok(sample) = sink.interleaved_in.pop() {
+            for _ in 0..source.channels() {
+                if let Ok(sample) = source.interleaved_in.pop() {
                     writer.write_sample(sample).unwrap();
                 } else {
                     print!("u ");
@@ -93,7 +94,7 @@ fn main() {
         }
 
         // simulate missed deadline
-        for _ in 0..(missed * sink.channels()) {
+        for _ in 0..(missed * source.channels()) {
             writer.write_sample(0.0).unwrap();
         }
 

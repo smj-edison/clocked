@@ -101,9 +101,11 @@ fn prep_message(buffer: &mut VecDeque<u8>) -> Option<usize> {
                 _ => unreachable!("already checked message bounds"),
             }
         } else if first_byte >> 4 == 0xF {
+            // sysex message
+
             match first_byte & 0x0F {
                 0x0 => {
-                    for (i, value) in buffer.iter().enumerate() {
+                    for (i, value) in buffer.iter().enumerate().skip(1) {
                         if *value == 0xF7 {
                             return Some(i + 1);
                         } else if *value & 0x80 != 0 {

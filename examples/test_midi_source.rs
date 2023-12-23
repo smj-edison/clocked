@@ -1,7 +1,6 @@
 use std::{
     error::Error,
     io::{stdin, stdout, Write},
-    sync::mpsc,
 };
 
 use clocked::midir::start_midir_source;
@@ -58,6 +57,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     while let Ok(message) = conn_in.receiver.recv() {
         println!("Parsed message: {:?}", message);
     }
+
+    // loop {
+    //     thread::sleep(Duration::from_millis(10));
+    // }
 
     println!("Closing connection");
     Ok(())

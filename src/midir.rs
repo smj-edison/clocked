@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{
     io,
     sync::mpsc::{self},
@@ -17,6 +18,12 @@ use crate::{
 pub struct MidirSource {
     _instance: MidiInputConnection<()>,
     pub receiver: mpsc::Receiver<TimedValue<MidiData>>,
+}
+
+impl fmt::Debug for MidirSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MidirSource { .. }")
+    }
 }
 
 pub fn start_midir_source(
@@ -77,7 +84,7 @@ impl io::Write for MidiOutputConnectionWrapper {
     }
 }
 
-pub fn start_midi_sink(
+pub fn start_midir_sink(
     device: MidiOutput,
     port: &MidiOutputPort,
     name: &str,

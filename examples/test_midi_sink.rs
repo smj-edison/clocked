@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use clocked::{midi::MidiData, midir::start_midi_sink};
+use clocked::{midi::MidiData, midir::start_midir_sink};
 use midir::{MidiOutput, MidiOutputPort};
 
 fn main() {
@@ -45,7 +45,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("\nOpening connection");
-    let conn_out = start_midi_sink(midi_out, out_port, "clocked-out-test")?;
+    let conn_out = start_midir_sink(midi_out, out_port, "clocked-out-test")?;
     println!("Connection open. Listen!");
 
     let play_note = |note: u8, duration: u64| {
