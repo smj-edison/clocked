@@ -1,4 +1,10 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
 
 use cpal::{
     traits::{DeviceTrait, StreamTrait},
@@ -128,6 +134,7 @@ where
 
 pub struct CpalSink {
     pub interleaved_out: rtrb::Producer<f32>,
+    pub measure_xruns: Arc<AtomicBool>,
     channels: usize,
 }
 
@@ -153,70 +160,69 @@ pub fn start_cpal_sink(
     // scratch to fill with `f32`s and then convert to whatever sample type CPAL is using
     let mut scratch = Vec::with_capacity(ring_buffer_size);
 
-    let callback_start = Instant::now();
-
     let cfg: StreamConfig = config.clone();
+
+    let measure_xruns = Arc::new(AtomicBool::new(false));
+    let measure_xruns_clone = measure_xruns.clone();
 
     let stream = match sample_format {
         cpal::SampleFormat::I8 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i8>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<i8>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::I16 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i16>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<i16>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::I32 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i32>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<i32>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::I64 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<i64>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<i64>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U8 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u8>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<u8>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U16 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u16>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<u16>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U32 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u32>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<u32>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::U64 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<u64>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<u64>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
         cpal::SampleFormat::F32 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, callback_start),
-            |err| {
-                println!("sink error: {:?}", err);
-            },
+            move |data, _: &_| output_callback::<f32>(data, &mut manager, &mut scratch, &measure_xruns),
+            |_| {},
             None,
         )?,
         cpal::SampleFormat::F64 => device.build_output_stream(
             &cfg,
-            move |data, _: &_| output_callback::<f64>(data, &mut manager, &mut scratch, callback_start),
+            move |data, _: &_| output_callback::<f64>(data, &mut manager, &mut scratch, &measure_xruns),
             |_| {},
             None,
         )?,
@@ -232,18 +238,17 @@ pub fn start_cpal_sink(
         CpalSink {
             interleaved_out: producer,
             channels: channels as usize,
+            measure_xruns: measure_xruns_clone,
         },
     ))
 }
 
-fn output_callback<T>(output: &mut [T], manager: &mut StreamSink, scratch: &mut Vec<f32>, callback_start: Instant)
+fn output_callback<T>(output: &mut [T], manager: &mut StreamSink, scratch: &mut Vec<f32>, measure_xruns: &AtomicBool)
 where
     T: cpal::Sample + dasp_sample::ToSample<T> + cpal::FromSample<f32>,
 {
-    let callback = Instant::now() - callback_start;
-
     scratch.resize(output.len(), 0.0);
-    manager.output_samples(scratch, callback > Duration::from_secs(1));
+    manager.output_samples(scratch, measure_xruns.load(Ordering::Relaxed));
 
     for (sample, sample_out) in scratch.iter().zip(output.iter_mut()) {
         *sample_out = sample.to_sample::<T>();

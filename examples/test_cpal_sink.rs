@@ -1,5 +1,9 @@
 use std::{
     f64::consts::TAU,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -23,10 +27,9 @@ fn main() {
     };
 
     let buffer_size = match config.buffer_size {
-        BufferSize::Fixed(buffer_size) => Some(buffer_size as usize),
-        BufferSize::Default => None,
-    }
-    .unwrap_or(1024);
+        BufferSize::Fixed(buffer_size) => buffer_size as usize,
+        BufferSize::Default => 512,
+    };
 
     println!("buffer size: {}", buffer_size);
     println!("sample rate: {}", config.sample_rate.0);
@@ -40,6 +43,8 @@ fn main() {
         2,
     )
     .unwrap();
+
+    sink.measure_xruns.store(true, Ordering::Release);
 
     let start = Instant::now();
     let mut frames_processed = 0;
