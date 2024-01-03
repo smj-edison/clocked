@@ -16,7 +16,6 @@ use crate::{
 };
 
 pub struct MidirSource {
-    _instance: MidiInputConnection<()>,
     pub receiver: mpsc::Receiver<TimedValue<MidiData>>,
 }
 
@@ -30,7 +29,7 @@ pub fn start_midir_source(
     device: MidiInput,
     port: &MidiInputPort,
     name: &str,
-) -> Result<MidirSource, ConnectError<MidiInput>> {
+) -> Result<(MidiInputConnection<()>, MidirSource), ConnectError<MidiInput>> {
     let (sender, receiver) = mpsc::channel();
 
     let mut interm = IntermittentSource::new(sender, |buffer, time| {
@@ -55,14 +54,11 @@ pub fn start_midir_source(
         (),
     )?;
 
-    Ok(MidirSource {
-        _instance: instance,
-        receiver: receiver,
-    })
+    Ok((instance, MidirSource { receiver: receiver }))
 }
 
+#[derive(Debug)]
 pub struct MidirSink {
-    _handle: JoinHandle<()>,
     pub sender: mpsc::Sender<MidiData>,
 }
 
@@ -88,17 +84,17 @@ pub fn start_midir_sink(
     device: MidiOutput,
     port: &MidiOutputPort,
     name: &str,
-) -> Result<MidirSink, ConnectError<MidiOutput>> {
+) -> Result<(JoinHandle<()>, MidirSink), ConnectError<MidiOutput>> {
     let (sender, receiver) = mpsc::channel();
 
     let mut conn_out = MidiOutputConnectionWrapper(device.connect(port, name)?);
 
-    Ok(MidirSink {
-        _handle: thread::spawn(move || {
+    Ok((
+        thread::spawn(move || {
             while let Ok(message) = receiver.recv() {
                 let _ = midi::write_midi_bytes(&message, &mut conn_out);
             }
         }),
-        sender,
-    })
+        MidirSink { sender },
+    ))
 }

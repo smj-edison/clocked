@@ -15,6 +15,7 @@ use rtrb::{Consumer, RingBuffer};
 
 use crate::{StreamSink, StreamSource};
 
+#[derive(Debug)]
 pub struct CpalSource {
     pub interleaved_in: Consumer<f32>,
     channels: usize,
@@ -132,6 +133,7 @@ where
     );
 }
 
+#[derive(Debug)]
 pub struct CpalSink {
     pub interleaved_out: rtrb::Producer<f32>,
     pub measure_xruns: Arc<AtomicBool>,

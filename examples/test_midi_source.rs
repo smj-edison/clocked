@@ -50,7 +50,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("\nOpening connection...");
     let in_port_name = midi_in.port_name(in_port)?;
 
-    let conn_in = start_midir_source(midi_in, in_port, "clocked-read-input")?;
+    let (_handle, conn_in) = start_midir_source(midi_in, in_port, "clocked-read-input")?;
 
     println!("Connection open, reading input from '{}'.", in_port_name);
 
