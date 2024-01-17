@@ -31,11 +31,10 @@ pub fn start_cpal_source(
     device: &Device,
     config: &StreamConfig,
     sample_format: SampleFormat,
-    buffer_size: usize,
-    periods: usize,
+    ring_size: usize,
 ) -> Result<(Stream, CpalSource), cpal::BuildStreamError> {
     let channels = config.channels as usize;
-    let ring_buffer_size = buffer_size * channels * periods;
+    let ring_buffer_size = ring_size * channels;
 
     let (producer, consumer) = RingBuffer::new(ring_buffer_size);
 
@@ -150,11 +149,10 @@ pub fn start_cpal_sink(
     device: &Device,
     config: &StreamConfig,
     sample_format: SampleFormat,
-    buffer_size: usize,
-    periods: usize,
+    ring_size: usize,
 ) -> Result<(Stream, CpalSink), cpal::BuildStreamError> {
     let channels = config.channels;
-    let ring_buffer_size = buffer_size * channels as usize * periods;
+    let ring_buffer_size = ring_size * channels as usize;
 
     let (producer, consumer) = RingBuffer::new(ring_buffer_size);
 
