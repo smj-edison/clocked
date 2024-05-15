@@ -4,7 +4,7 @@ description = "A collection of tools for synchronizing asynchronous audio stream
 categories = ["game-development", "api-bindings"]
 keywords = ["audio", "kiss", "sound"]
 readme = "README.md"
-version = "0.8.1"
+version = "0.8.2"
 documentation = "https://docs.rs/clocked"
 homepage = "https://github.com/smj-edison/clocked"
 repository = "https://github.com/smj-edison/clocked"
@@ -14,7 +14,7 @@ edition = "2021"
 [dependencies]
 rtrb = "0.2.3"
 cpal = { version = "0.15.2", optional = true }
-midir = { version = "0.8.0", optional = true }
+midir = { version = "0.10.0", optional = true }
 serde = { version = "1.0.133", features = ["derive"], optional = true }
 dasp_sample = "0.11.0"
 dasp_slice = "0.11.0"
