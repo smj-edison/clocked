@@ -55,8 +55,13 @@ fn main() {
     println!("buffer size: {}", buffer_size);
     println!("sample rate: {}", config.sample_rate.0);
 
-    let (_handle, mut source) =
-        start_cpal_source(&input_device, &config, supported_config.sample_format(), buffer_size, 2).unwrap();
+    let (_handle, mut source) = start_cpal_source(
+        &input_device,
+        &config,
+        supported_config.sample_format(),
+        buffer_size * 2,
+    )
+    .unwrap();
 
     let start = Instant::now();
     let mut frames_processed = 0;

@@ -39,8 +39,7 @@ fn main() {
         &output_device,
         &config,
         supported_config.sample_format(),
-        buffer_size,
-        2,
+        buffer_size * 2,
     )
     .unwrap();
 
